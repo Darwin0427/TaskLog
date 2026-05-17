@@ -3,10 +3,21 @@ import 'package:flutter/material.dart';
 import '../../models/grade_item.dart';
 import '../../models/subject.dart';
 import '../../services/firestore_service.dart';
+import '../../utils/error_messages.dart';
 
 class CrearGradeItemScreen extends StatefulWidget {
   final Subject subject;
-  const CrearGradeItemScreen({super.key, required this.subject});
+
+  /// Si se pasa, edita un grade item existente. Si es null, crea uno nuevo.
+  final GradeItem? existing;
+
+  const CrearGradeItemScreen({
+    super.key,
+    required this.subject,
+    this.existing,
+  });
+
+  bool get isEditing => existing != null;
 
   @override
   State<CrearGradeItemScreen> createState() => _CrearGradeItemScreenState();
@@ -14,17 +25,27 @@ class CrearGradeItemScreen extends StatefulWidget {
 
 class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nombreCtrl = TextEditingController();
-  final _porcentajeCtrl = TextEditingController();
-  final _notaCtrl = TextEditingController();
+  late final TextEditingController _nombreCtrl;
+  late final TextEditingController _porcentajeCtrl;
+  late final TextEditingController _notaCtrl;
 
-  double _usado = 0;
+  /// Porcentaje ya consumido por OTROS items (excluyendo el actual si estamos
+  /// editando).
+  double _usadoExcluyendoActual = 0;
   bool _loadingUsado = true;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
+    final e = widget.existing;
+    _nombreCtrl = TextEditingController(text: e?.nombre ?? '');
+    _porcentajeCtrl = TextEditingController(
+      text: e == null ? '' : e.porcentaje.toStringAsFixed(0),
+    );
+    _notaCtrl = TextEditingController(
+      text: e?.nota == null ? '' : e!.nota!.toStringAsFixed(1),
+    );
     _porcentajeCtrl.addListener(() => setState(() {}));
     _cargarPorcentajeUsado();
   }
@@ -41,10 +62,15 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
     try {
       final items = await FirestoreService.instance
           .getGradeItemsBySubject(widget.subject.id);
-      final suma = items.fold<double>(0, (a, e) => a + e.porcentaje);
+      double suma = 0;
+      for (final it in items) {
+        // En modo editar, excluimos el item actual del cálculo del disponible.
+        if (widget.isEditing && it.id == widget.existing!.id) continue;
+        suma += it.porcentaje;
+      }
       if (mounted) {
         setState(() {
-          _usado = suma;
+          _usadoExcluyendoActual = suma;
           _loadingUsado = false;
         });
       }
@@ -58,9 +84,10 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
     return double.tryParse(s) ?? 0;
   }
 
-  double get _disponible => (100 - _usado).clamp(0, 100);
-  double get _restanteTrasGuardar =>
-      _disponible - _porcentajeIngresado;
+  double get _disponible =>
+      (100 - _usadoExcluyendoActual).clamp(0, 100).toDouble();
+
+  double get _restanteTrasGuardar => _disponible - _porcentajeIngresado;
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -71,7 +98,7 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
       );
       return;
     }
-    if (_usado + p > 100.0001) {
+    if (_usadoExcluyendoActual + p > 100.0001) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -102,21 +129,60 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
     setState(() => _saving = true);
     try {
       final item = GradeItem(
-        id: '',
+        id: widget.existing?.id ?? '',
         subjectId: widget.subject.id,
         nombre: _nombreCtrl.text.trim(),
         porcentaje: p,
         nota: nota,
       );
-      await FirestoreService.instance.addGradeItem(item);
-      if (mounted) Navigator.of(context).pop();
+      if (widget.isEditing) {
+        await FirestoreService.instance
+            .updateGradeItem(widget.existing!.id, item);
+      } else {
+        await FirestoreService.instance.addGradeItem(item);
+      }
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al guardar: $e')),
-      );
+      showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    if (!widget.isEditing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Eliminar ítem?'),
+        content: Text(
+          'Se eliminará "${widget.existing!.nombre}". Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.onErrorContainer,
+              backgroundColor: Theme.of(ctx).colorScheme.errorContainer,
+            ),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+    try {
+      await FirestoreService.instance.deleteGradeItem(widget.existing!.id);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      showErrorSnackBar(context, e);
     }
   }
 
@@ -124,7 +190,17 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
   Widget build(BuildContext context) {
     final color = widget.subject.color;
     return Scaffold(
-      appBar: AppBar(title: const Text('Nuevo ítem evaluativo')),
+      appBar: AppBar(
+        title: Text(widget.isEditing ? 'Editar ítem' : 'Nuevo ítem evaluativo'),
+        actions: [
+          if (widget.isEditing)
+            IconButton(
+              tooltip: 'Eliminar',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _confirmAndDelete,
+            ),
+        ],
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -220,7 +296,9 @@ class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
                       ),
                     )
                   : const Icon(Icons.check),
-              label: const Text('Guardar ítem'),
+              label: Text(
+                widget.isEditing ? 'Guardar cambios' : 'Guardar ítem',
+              ),
               style: FilledButton.styleFrom(
                 backgroundColor: color,
                 padding: const EdgeInsets.symmetric(vertical: 14),

@@ -1,39 +1,102 @@
 # gestor_tareas
 
 App Flutter para gestionar tareas, notas y calificaciones académicas con Firebase
-(Authentication + Cloud Firestore).
+(Authentication + Cloud Firestore). Diseñada para estudiantes: organiza tu
+semestre por materias, registra tareas con prioridad y fechas límite, lleva
+tus notas del curso y calcula automáticamente lo que necesitas para aprobar.
+
+## Características
+
+### Navegación principal
+- **3 tabs**: Tareas, Calendario, Calificaciones.
+- **FAB expandible** sobre la bottom bar para crear notas o tareas rápido.
+
+### Tareas
+- Agrupadas por prioridad (Alta / Media / Baja) ordenadas por fecha límite.
+- Sección "Completadas" colapsable.
+- Checkbox circular para marcar completada (tachado + opacidad).
+- Detalle con notas asociadas, editar y eliminar (con confirmación).
+- Una tarea puede vincularse a una calificación de su materia (ver abajo).
+
+### Calendario
+- Vista Mes / Semana (2 semanas) / Día.
+- Indicador de día con tareas (punto de color de la materia).
+- Filtro por materia (chips) que afecta puntos y lista del día.
+- Lista de tareas del día seleccionado abajo.
+
+### Calificaciones
+- Lista de materias con promedio, barra de progreso del % evaluado y conteo de
+  ítems.
+- Detalle de materia con 3 sub-tabs: Notas, Tareas, Notas del curso.
+- Información extra opcional: profesor, aula/salón, link de clase virtual.
+
+### Notas del curso (grade items)
+- Cada ítem evaluativo tiene nombre, % del curso, y nota (0-5).
+- Validación de % al crear: no se puede superar el 100%.
+- Cálculo automático de **Acumulado** y **Promedio actual**.
+- Calculadora **"¿Qué nota necesito?"**: dado un objetivo (configurable con
+  slider), te dice qué promedio necesitas en los ítems pendientes para llegar.
+- Edición rápida de nota desde diálogo compacto.
+
+### Vinculación tarea ↔ calificación
+- Una tarea puede vincularse a UN ítem evaluativo de su materia.
+- La nota de la tarea pasa a ser directamente la nota del ítem (sin pesos ni
+  ponderaciones).
+- Los ítems ya ocupados aparecen deshabilitados en el selector de tareas
+  futuras.
+- Indicador visual en el ítem: chip "Vinculada a: [título de tarea]" con tap
+  para navegar a la tarea.
+
+### Notas (apuntes)
+- Cada nota pertenece a una materia y tiene importancia.
+- Opcionalmente se puede vincular a una tarea concreta.
+- Pantalla de detalle con contenido completo, editar y eliminar.
+
+### Polish
+- **Splash screen** morado con logo durante el arranque de Firebase.
+- **Caché offline** habilitado en mobile y web — crear/editar funciona sin
+  conexión y sincroniza al volver.
+- **Pull to refresh** en las listas.
+- **SnackBars amigables** que traducen errores de Firebase a español natural.
+- **Animaciones** sutiles de aparición en las listas (fade + slide).
+- **Tema claro/oscuro automático** según el sistema (Material 3).
 
 ## Stack
 
 - Flutter `^3.11.4` · Dart `3.11.4`
 - `firebase_core ^3.0.0`, `firebase_auth ^5.0.0`, `cloud_firestore ^5.0.0`
-- `table_calendar ^3.1.2`, `intl ^0.19.0`
-- Material Design 3, tema claro/oscuro automático según el sistema
+- `table_calendar ^3.1.2`, `intl ^0.20.2`, `flutter_localizations`
+- Material Design 3
 
 ## Estructura del código
 
 ```
 lib/
-├── firebase_options.dart   # generado por flutterfire (no editar)
-├── main.dart               # entry point + init Firebase + i18n es
+├── firebase_options.dart       # generado por flutterfire (no editar)
+├── main.dart                   # entry point: Firebase init + locales + tema
 ├── theme/
-│   └── app_theme.dart      # colores, paleta, íconos, ThemeData light/dark
+│   └── app_theme.dart          # paleta, íconos, ThemeData light/dark
 ├── models/
 │   ├── subject.dart
 │   ├── task_item.dart
 │   ├── note.dart
 │   └── grade_item.dart
 ├── services/
-│   ├── auth_service.dart      # FirebaseAuth wrapper (login/register/signOut)
-│   └── firestore_service.dart # CRUD por colección bajo users/{uid}/...
-├── widgets/                # PriorityBadge, EmptyState, ImportanciaSelector...
+│   ├── auth_service.dart       # FirebaseAuth wrapper
+│   └── firestore_service.dart  # CRUD bajo users/{uid}/... + cálculos auto
+├── utils/
+│   ├── error_messages.dart     # helper de SnackBars amigables
+│   └── grade_calc.dart         # cálculo de nota efectiva de un grade item
+├── widgets/                    # PriorityBadge, EmptyState, selectores, etc.
 └── screens/
-    ├── auth/               # AuthGate, LoginScreen, RegisterScreen
-    ├── main_screen.dart    # BottomNav 3 tabs + FAB expandible
-    ├── tasks/              # Tab 0
-    ├── calendar/           # Tab 1
-    ├── grades/             # Tab 2 + DetalleMateriaScreen (3 sub-tabs)
-    └── forms/              # CrearTarea, CrearNota, CrearGradeItem, CrearMateria
+    ├── splash_screen.dart
+    ├── auth/                   # AuthGate, Login, Register
+    ├── main_screen.dart        # BottomNav 3 tabs + FAB expandible
+    ├── tasks/                  # TasksScreen + DetalleTareaScreen
+    ├── calendar/               # CalendarScreen
+    ├── notes/                  # DetalleNotaScreen
+    ├── grades/                 # GradesScreen + DetalleMateriaScreen
+    └── forms/                  # CrearTarea, CrearNota, CrearGradeItem, CrearMateria
 ```
 
 ## Estructura en Firestore
@@ -42,14 +105,12 @@ Todos los documentos viven bajo `users/{uid}/...`:
 
 | Colección | Campos |
 |---|---|
-| `subjects/{id}` | `nombre: string`, `color: string (#hex)`, `iconName: string`, `creadoEn: Timestamp` |
-| `tasks/{id}` | `titulo`, `descripcion`, `subjectId`, `importancia ('Alta'\|'Media'\|'Baja')`, `fechaLimite: Timestamp`, `creadoEn: Timestamp` |
-| `notes/{id}` | `titulo`, `contenido`, `subjectId`, `importancia`, `taskId?` (opcional), `creadoEn: Timestamp` |
-| `gradeItems/{id}` | `subjectId`, `nombre`, `porcentaje: number`, `nota: number?` (null si aún no se evalúa), `creadoEn: Timestamp` |
+| `subjects/{id}` | `nombre`, `color` (hex), `iconName`, `profesor?`, `aula?`, `classLinkUrl?`, `creadoEn` |
+| `tasks/{id}` | `titulo`, `descripcion`, `subjectId`, `importancia`, `fechaLimite`, `completada`, `completadaEn?`, `gradeItemId?`, `nota?`, `creadoEn` |
+| `notes/{id}` | `titulo`, `contenido`, `subjectId`, `importancia`, `taskId?`, `creadoEn` |
+| `gradeItems/{id}` | `subjectId`, `nombre`, `porcentaje`, `nota?` (auto si tiene tarea vinculada), `creadoEn` |
 
 ## Reglas de seguridad de Firestore
-
-Asegúrate de tener publicadas estas reglas (Firebase Console → Firestore → Rules):
 
 ```javascript
 rules_version = '2';
@@ -76,26 +137,31 @@ flutter pub get
 flutter run -d chrome
 ```
 
-### En Android (con dispositivo USB conectado o emulador corriendo)
+### En Android (con dispositivo conectado por USB y depuración activada)
 
 ```powershell
 flutter devices    # lista dispositivos disponibles
 flutter run        # o: flutter run -d <device-id>
 ```
 
+### Análisis estático
+
+```powershell
+flutter analyze
+```
+
 ### Compilación release
 
 ```powershell
-flutter build apk        # Android
-flutter build web        # Web (genera build/web/)
+flutter build apk         # Android
+flutter build web         # Web (genera build/web/)
 ```
 
 ## Setup de Firebase (ya hecho)
 
 Este proyecto ya tiene `firebase_options.dart` generado vía
-`flutterfire configure` apuntando al proyecto `gestor-tareas-1f581`.
-
-Si necesitas re-configurarlo (por ejemplo para otro proyecto Firebase):
+`flutterfire configure`. Si necesitas re-configurarlo para otro proyecto
+Firebase:
 
 ```powershell
 flutter pub global activate flutterfire_cli   # solo si no está instalado
@@ -104,24 +170,23 @@ flutterfire configure                          # interactivo
 
 ### Authentication
 
-Asegúrate de tener habilitado **Email/Password** en Firebase Console →
+Email/Password debe estar habilitado en Firebase Console →
 Authentication → Sign-in method.
 
-## Convenciones del código
+## Convenciones
 
-- **StreamBuilder** en todas las listas que leen Firestore — actualización en
-  tiempo real.
-- **TextEditingController** + `GlobalKey<FormState>` en todos los formularios.
-- Colores de prioridad **constantes** en toda la app:
-  - Alta = `#E24B4A` (rojo)
-  - Media = `#BA7517` (ámbar)
-  - Baja = `#3B6D11` (verde)
-- Color de acento principal: `#534AB7` (morado).
-- Material Design 3, ColorScheme generado desde el seed morado.
+- **StreamBuilder** en todas las listas que leen de Firestore (tiempo real).
+- **TextEditingController** + `GlobalKey<FormState>` en formularios.
+- Colores de prioridad fijos: Alta `#E24B4A`, Media `#BA7517`, Baja `#3B6D11`.
+- Acento principal: `#534AB7` (morado). ColorScheme generado desde ese seed.
 
-## Limitaciones conocidas / próxima versión
+## Roadmap pendiente
 
-- Adjuntos en notas no implementados (subir archivos a Storage).
-- No hay edición ni borrado de tareas/notas/items (solo creación y lectura).
-  Para borrar a mano: Firebase Console → Firestore → documento → menú "..." → Delete.
-- No hay notificaciones push de fechas límite.
+- Tareas recurrentes (semanal/diaria/mensual con fecha de fin).
+- Filtros rápidos en lista de Tareas (Hoy / Esta semana / Vencidas).
+- Indicador visual de vencida y "vence hoy".
+- Swipe actions (deslizar para completar/borrar).
+- Múltiples puntos por día en Calendario (uno por materia).
+- Botón "Hoy" en AppBar del calendario.
+- Notificaciones push de fechas límite.
+- Adjuntos en notas (Firebase Storage).

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../../utils/error_messages.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -31,9 +32,7 @@ class _LoginScreenState extends State<LoginScreen> {
           .signIn(email: _emailCtrl.text, password: _passCtrl.text);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al iniciar sesión: $e')),
-      );
+      showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../../utils/error_messages.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -31,9 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al registrarse: $e')),
-      );
+      showErrorSnackBar(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

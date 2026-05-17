@@ -267,48 +267,77 @@ class _DayTasksList extends StatelessWidget {
     final items = tasksByDay[key] ?? const <TaskItem>[];
     final df = DateFormat("EEEE d 'de' MMMM", 'es');
     if (items.isEmpty) {
-      return EmptyState(
-        icon: Icons.event_available_outlined,
-        title: 'Sin tareas el ${df.format(day)}',
+      return RefreshIndicator(
+        onRefresh: FirestoreService.instance.refreshFromServer,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 60),
+            EmptyState(
+              icon: Icons.event_available_outlined,
+              title: 'Sin tareas el ${df.format(day)}',
+            ),
+          ],
+        ),
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-      itemCount: items.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
+    return RefreshIndicator(
+      onRefresh: FirestoreService.instance.refreshFromServer,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
         final t = items[i];
         final subject = subjectsById[t.subjectId];
-        return Card(
-          child: ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              t.titulo,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  PriorityBadge(importancia: t.importancia, small: true),
-                  if (subject != null)
-                    SubjectBadge(nombre: subject.nombre, color: subject.color),
-                ],
+        return Opacity(
+          opacity: t.completada ? 0.6 : 1,
+          child: Card(
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => DetalleTareaScreen(taskId: t.id),
+              leading: Icon(
+                t.completada
+                    ? Icons.check_circle
+                    : Icons.radio_button_unchecked,
+                color: t.completada
+                    ? (subject?.color ?? AppColors.primary)
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              title: Text(
+                t.titulo,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  decoration:
+                      t.completada ? TextDecoration.lineThrough : null,
+                ),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    PriorityBadge(importancia: t.importancia, small: true),
+                    if (subject != null)
+                      SubjectBadge(
+                          nombre: subject.nombre, color: subject.color),
+                  ],
+                ),
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DetalleTareaScreen(taskId: t.id),
+                ),
               ),
             ),
           ),
         );
       },
+      ),
     );
   }
 }

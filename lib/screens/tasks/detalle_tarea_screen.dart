@@ -5,35 +5,118 @@ import '../../models/note.dart';
 import '../../models/subject.dart';
 import '../../models/task_item.dart';
 import '../../services/firestore_service.dart';
+import '../../utils/error_messages.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/priority_badge.dart';
 import '../forms/crear_nota_screen.dart';
+import '../forms/crear_tarea_screen.dart';
+import '../notes/detalle_nota_screen.dart';
 
 class DetalleTareaScreen extends StatelessWidget {
   final String taskId;
   const DetalleTareaScreen({super.key, required this.taskId});
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Detalle de tarea')),
-      body: FutureBuilder<TaskItem?>(
-        future: FirestoreService.instance.getTask(taskId),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final task = snap.data;
-          if (task == null) {
-            return const EmptyState(
-              icon: Icons.error_outline,
-              title: 'Tarea no encontrada',
-            );
-          }
-          return _Body(task: task);
-        },
+  Future<void> _confirmAndDelete(BuildContext context, TaskItem task) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Eliminar tarea?'),
+        content: Text(
+          'Se eliminará "${task.titulo}" y todas sus notas asociadas. '
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              foregroundColor: Theme.of(ctx).colorScheme.onErrorContainer,
+              backgroundColor: Theme.of(ctx).colorScheme.errorContainer,
+            ),
+            child: const Text('Eliminar'),
+          ),
+        ],
       ),
     );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+    try {
+      await FirestoreService.instance.deleteTask(task.id);
+      if (context.mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (!context.mounted) return;
+      showErrorSnackBar(context, e);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<TaskItem?>(
+      stream: FirestoreService.instance.watchTask(taskId),
+      builder: (context, snap) {
+        final task = snap.data;
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Detalle de tarea'),
+            actions: task == null
+                ? null
+                : [
+                    IconButton(
+                      tooltip: task.completada
+                          ? 'Marcar como pendiente'
+                          : 'Marcar como completada',
+                      icon: Icon(
+                        task.completada
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                      ),
+                      onPressed: () async {
+                        try {
+                          await FirestoreService.instance
+                              .setTaskCompletada(task.id, !task.completada);
+                        } catch (e) {
+                          if (context.mounted) showErrorSnackBar(context, e);
+                        }
+                      },
+                    ),
+                    IconButton(
+                      tooltip: 'Editar',
+                      icon: const Icon(Icons.edit_outlined),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => CrearTareaScreen(existing: task),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Eliminar',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _confirmAndDelete(context, task),
+                    ),
+                  ],
+          ),
+          body: _buildBody(context, snap),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(BuildContext context, AsyncSnapshot<TaskItem?> snap) {
+    if (snap.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final task = snap.data;
+    if (task == null) {
+      return const EmptyState(
+        icon: Icons.error_outline,
+        title: 'Tarea no encontrada',
+        subtitle: 'Es posible que la hayas eliminado.',
+      );
+    }
+    return _Body(task: task);
   }
 }
 
@@ -61,6 +144,12 @@ class _Body extends StatelessWidget {
               task.titulo,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    decoration: task.completada
+                        ? TextDecoration.lineThrough
+                        : null,
+                    color: task.completada
+                        ? Theme.of(context).colorScheme.onSurfaceVariant
+                        : null,
                   ),
             ),
             const SizedBox(height: 12),
@@ -190,32 +279,40 @@ class _NoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    note.titulo,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DetalleNotaScreen(noteId: note.id),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      note.titulo,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
                   ),
-                ),
-                PriorityBadge(importancia: note.importancia, small: true),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              note.contenido,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
+                  PriorityBadge(importancia: note.importancia, small: true),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                note.contenido,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
         ),
       ),
     );

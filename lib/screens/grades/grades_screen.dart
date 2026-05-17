@@ -5,6 +5,7 @@ import '../../models/subject.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/animated_list_item.dart';
 import '../../widgets/empty_state.dart';
 import '../forms/crear_materia_screen.dart';
 import 'detalle_materia_screen.dart';
@@ -67,12 +68,18 @@ class GradesScreen extends StatelessWidget {
           }
           return Stack(
             children: [
-              ListView.separated(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                itemCount: subjects.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, i) =>
-                    _SubjectCard(subject: subjects[i]),
+              RefreshIndicator(
+                onRefresh: FirestoreService.instance.refreshFromServer,
+                child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                  itemCount: subjects.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, i) => AnimatedListItem(
+                    key: ValueKey('subject_${subjects[i].id}'),
+                    child: _SubjectCard(subject: subjects[i]),
+                  ),
+                ),
               ),
               Positioned(
                 bottom: 96,
