@@ -5,6 +5,29 @@ App Flutter para gestionar tareas, notas y calificaciones académicas con Fireba
 semestre por materias, registra tareas con prioridad y fechas límite, lleva
 tus notas del curso y calcula automáticamente lo que necesitas para aprobar.
 
+## Integrantes
+
+- Darwin Marín
+- Jean Paul Durango Márquez
+
+## Nota sobre el servicio de datos
+
+Aunque el reto sugería implementar un fake backend en memoria con `uuid` y
+`Future.delayed`, este proyecto integra **Cloud Firestore como backend real**.
+Esto cumple e incluso supera los objetivos del fake backend:
+
+- **Lista en "memoria"**: reemplazada por persistencia real en Firestore con
+  caché offline automático.
+- **`Future.delayed` simulado**: reemplazado por operaciones asíncronas reales
+  vía `Future<void>` y `Stream` en `FirestoreService`.
+- **IDs alfanuméricos con `uuid`**: reemplazados por los IDs auto-generados
+  de Firestore (alfanuméricos, únicos y distribuidos).
+- **CRUD**: implementado por entidad (Subjects, Tasks, Notes, GradeItems) con
+  `add`, `update`, `delete` y `watch*` para streams en tiempo real.
+
+Todos los **comportamientos visuales** que pide el reto se mantienen:
+`CircularProgressIndicator` mientras guarda, manejo de errores, etc.
+
 ## Características
 
 ### Navegación principal
@@ -127,9 +150,30 @@ service cloud.firestore {
 
 ### Primera vez (después de clonar)
 
+Los archivos de configuración de Firebase NO están en el repo por seguridad.
+Hay que generarlos localmente:
+
 ```powershell
+# 1. Instalar las CLIs (solo la primera vez)
+npm install -g firebase-tools
+flutter pub global activate flutterfire_cli
+
+# 2. Autenticarse con Firebase
+firebase login
+
+# 3. Conectar este clon con el proyecto de Firebase
+cd "ruta/al/proyecto/gestor_tareas"
+flutterfire configure
+# → elegir el proyecto "gestor-tareas-1f581"
+# → marcar las plataformas (android, web)
+
+# 4. Bajar dependencias
 flutter pub get
 ```
+
+Después de eso, `lib/firebase_options.dart` y
+`android/app/google-services.json` aparecerán generados localmente. Como están
+en `.gitignore`, no se subirán de vuelta al repo.
 
 ### En navegador (Chrome)
 
