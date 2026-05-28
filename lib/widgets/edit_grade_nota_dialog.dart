@@ -165,7 +165,6 @@ class _EditGradeNotaDialogState extends State<EditGradeNotaDialog> {
           else ...[
             TextField(
               controller: _notaCtrl,
-              autofocus: true,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
@@ -193,18 +192,23 @@ class _EditGradeNotaDialogState extends State<EditGradeNotaDialog> {
                   ),
             ),
           ],
+          const SizedBox(height: 12),
+          // Eliminar va dentro del cuerpo (no en `actions:`) para evitar
+          // que el overflow vertical de los botones genere un Spacer gigante.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _saving ? null : _eliminar,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Eliminar'),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
         ],
       ),
       actions: [
-        TextButton.icon(
-          onPressed: _saving ? null : _eliminar,
-          icon: const Icon(Icons.delete_outline),
-          label: const Text('Eliminar'),
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-          ),
-        ),
-        const Spacer(),
         TextButton(
           onPressed: _saving ? null : () => Navigator.of(context).pop(),
           child: Text(widget.autoCalculada ? 'Cerrar' : 'Cancelar'),
@@ -225,7 +229,6 @@ class _EditGradeNotaDialogState extends State<EditGradeNotaDialog> {
                 : const Text('Guardar'),
           ),
       ],
-      actionsOverflowAlignment: OverflowBarAlignment.center,
     );
   }
 }
