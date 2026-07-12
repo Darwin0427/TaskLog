@@ -11,6 +11,7 @@ import '../../widgets/priority_badge.dart';
 import '../forms/crear_nota_screen.dart';
 import '../forms/crear_tarea_screen.dart';
 import '../notes/detalle_nota_screen.dart';
+import 'gestion_recordatorios_screen.dart';
 
 class DetalleTareaScreen extends StatelessWidget {
   final String taskId;
@@ -184,6 +185,8 @@ class _Body extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 24),
+            _RecordatoriosCard(task: task),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
@@ -268,6 +271,77 @@ class _InfoRow extends StatelessWidget {
         Text('$label: ', style: const TextStyle(fontWeight: FontWeight.w600)),
         Expanded(child: Text(value)),
       ],
+    );
+  }
+}
+
+/// Card compacta en el detalle de tarea que muestra el conteo de
+/// recordatorios y navega a la pantalla dedicada de gestión.
+/// Reemplaza la lista inline anterior — más ligera y consistente con
+/// el patrón de la app.
+class _RecordatoriosCard extends StatelessWidget {
+  final TaskItem task;
+  const _RecordatoriosCard({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = task.recordatorios.length;
+    final subtitle = count == 0
+        ? 'Sin recordatorios programados'
+        : '$count ${count == 1 ? "programado" : "programados"}';
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => GestionRecordatoriosScreen(taskId: task.id),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.notifications_active_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Recordatorios',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

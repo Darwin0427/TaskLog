@@ -197,6 +197,39 @@ funcionar como se describe.
 - Aparecen en el sub-tab "Notas" del detalle de materia.
 - Aparecen también en el detalle de cada tarea si están vinculadas.
 
+### Recordatorios y notificaciones
+
+- Cada tarea puede tener **múltiples recordatorios** programados con
+  antelación personalizable.
+- **4 presets rápidos** (`el día de`, `1 día antes`, `3 días antes`,
+  `1 semana antes`) más opción de "personalizado" con cualquier cantidad
+  de días y hora exacta.
+- **Defaults inteligentes** según la importancia de la tarea:
+  - **Alta**: 4 recordatorios (7d, 3d, 1d, el día de).
+  - **Media**: 2 recordatorios (3d, 1d).
+  - **Baja**: 1 recordatorio (el día de).
+- Hora configurable por cada recordatorio con `TimePicker` en formato
+  **24 horas** (más cómodo que el reloj analógico con AM/PM).
+- Al crear/editar tareas, la sección Recordatorios es una **card compacta**
+  que muestra el conteo. Toca la card → se abre una pantalla dedicada con
+  los chips de presets y el diálogo de personalizado.
+- Al abrir el detalle de una tarea, se ve una card similar que abre la
+  pantalla `Recordatorios` — ahí puedes ver la fecha calculada de cada
+  uno (por ejemplo *"27 de may, 09:00 · 3 días antes"*) y eliminarlos
+  individualmente.
+- **Cuerpo contextual** de la notificación según cuándo llega:
+  - `Hoy vence: [título]`
+  - `Mañana vence: [título]`
+  - `Faltan N días: [título]`
+- Al **tocar la notificación**, la app abre directo al detalle de la tarea.
+- **Reprogramación automática**: si editas la fecha límite o la lista de
+  recordatorios, se cancelan los viejos y se programan los nuevos.
+- **Cancelación automática** al marcar la tarea como completada o
+  eliminarla. Reprograma al desmarcar como completada.
+- Funciona con la **app cerrada**. Usa `WorkManager` internamente
+  (vía `awesome_notifications`) para sobrevivir a las restricciones de
+  batería de fabricantes agresivos.
+
 ### Sincronización y offline
 
 - Caché local habilitado en mobile y web.
@@ -265,10 +298,6 @@ anteriores.
 
 Para que quede claro qué se incluye y qué no:
 
-- **Notificaciones / recordatorios por tarea** — planificada como feature
-  destacada con el plan completo en
-  [`NOTIFICATIONS_PLAN.md`](./NOTIFICATIONS_PLAN.md), pero no implementada
-  en esta entrega.
 - **Tareas recurrentes** (semanal / diaria / mensual con fecha de fin).
 - **Filtros rápidos en Tareas** (Hoy / Esta semana / Vencidas).
 - **Indicador visual** de tareas vencidas o que vencen hoy.
@@ -289,6 +318,7 @@ ser transparentes sobre el alcance actual.
 
 - Flutter `^3.11.4` · Dart `3.11.4`
 - `firebase_core ^3.0.0`, `firebase_auth ^5.0.0`, `cloud_firestore ^5.0.0`
+- `awesome_notifications ^0.10.1`, `timezone ^0.9.4`, `flutter_timezone ^3.0.1`
 - `table_calendar ^3.1.2`, `intl ^0.20.2`, `flutter_localizations`
 - Material Design 3
 
@@ -303,24 +333,26 @@ lib/
 ├── models/
 │   ├── subject.dart
 │   ├── task_item.dart
+│   ├── task_reminder.dart      # recordatorio de una tarea (días, hora)
 │   ├── note.dart
 │   └── grade_item.dart
 ├── services/
-│   ├── auth_service.dart       # FirebaseAuth wrapper
-│   └── firestore_service.dart  # CRUD bajo users/{uid}/... + cálculos auto
+│   ├── auth_service.dart          # FirebaseAuth wrapper
+│   ├── firestore_service.dart     # CRUD bajo users/{uid}/... + cálculos auto
+│   └── notification_service.dart  # awesome_notifications + programación de recordatorios
 ├── utils/
 │   ├── error_messages.dart     # helper de SnackBars amigables
 │   └── grade_calc.dart         # cálculo de nota efectiva de un grade item
-├── widgets/                    # PriorityBadge, EmptyState, selectores, etc.
+├── widgets/                    # PriorityBadge, EmptyState, RecordatoriosSelector, etc.
 └── screens/
     ├── splash_screen.dart
     ├── auth/                   # AuthGate, Login, Register
     ├── main_screen.dart        # BottomNav 3 tabs + FAB expandible
-    ├── tasks/                  # TasksScreen + DetalleTareaScreen
+    ├── tasks/                  # TasksScreen + DetalleTareaScreen + GestionRecordatoriosScreen
     ├── calendar/               # CalendarScreen
     ├── notes/                  # DetalleNotaScreen
     ├── grades/                 # GradesScreen + DetalleMateriaScreen
-    └── forms/                  # CrearTarea, CrearNota, CrearGradeItem, CrearMateria
+    └── forms/                  # CrearTarea, CrearNota, CrearGradeItem, CrearMateria + SeleccionarRecordatoriosScreen
 ```
 
 ## Estructura en Firestore
@@ -330,7 +362,7 @@ Todos los documentos viven bajo `users/{uid}/...`:
 | Colección | Campos |
 |---|---|
 | `subjects/{id}` | `nombre`, `color` (hex), `iconName`, `profesor?`, `aula?`, `classLinkUrl?`, `creadoEn` |
-| `tasks/{id}` | `titulo`, `descripcion`, `subjectId`, `importancia`, `fechaLimite`, `completada`, `completadaEn?`, `gradeItemId?`, `nota?`, `creadoEn` |
+| `tasks/{id}` | `titulo`, `descripcion`, `subjectId`, `importancia`, `fechaLimite`, `completada`, `completadaEn?`, `gradeItemId?`, `nota?`, `recordatorios[]` (array de `{diasAntes, hora, minuto}`), `creadoEn` |
 | `notes/{id}` | `titulo`, `contenido`, `subjectId`, `importancia`, `taskId?`, `creadoEn` |
 | `gradeItems/{id}` | `subjectId`, `nombre`, `porcentaje`, `nota?` (auto si tiene tarea vinculada), `creadoEn` |
 

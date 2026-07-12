@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'task_reminder.dart';
+
 class TaskItem {
   final String id;
   final String titulo;
@@ -17,6 +19,10 @@ class TaskItem {
   final double? pesoEnGradeItem;
   final double? nota;
 
+  /// Lista de recordatorios programados para esta tarea.
+  /// Vacía por defecto. Se persiste en Firestore como array de mapas.
+  final List<TaskReminder> recordatorios;
+
   final DateTime? creadoEn;
 
   TaskItem({
@@ -31,6 +37,7 @@ class TaskItem {
     this.gradeItemId,
     this.pesoEnGradeItem,
     this.nota,
+    this.recordatorios = const <TaskReminder>[],
     this.creadoEn,
   });
 
@@ -49,6 +56,9 @@ class TaskItem {
       gradeItemId: data['gradeItemId'] as String?,
       pesoEnGradeItem: (data['pesoEnGradeItem'] as num?)?.toDouble(),
       nota: (data['nota'] as num?)?.toDouble(),
+      recordatorios: ((data['recordatorios'] as List?) ?? const [])
+          .map((m) => TaskReminder.fromMap(m as Map<String, dynamic>))
+          .toList(),
       creadoEn: (data['creadoEn'] as Timestamp?)?.toDate(),
     );
   }
@@ -63,6 +73,41 @@ class TaskItem {
         if (gradeItemId != null) 'gradeItemId': gradeItemId,
         if (pesoEnGradeItem != null) 'pesoEnGradeItem': pesoEnGradeItem,
         if (nota != null) 'nota': nota,
+        'recordatorios': recordatorios.map((r) => r.toMap()).toList(),
         'creadoEn': FieldValue.serverTimestamp(),
       };
+
+  /// Copia inmutable con campos sobreescritos. Útil, por ejemplo, para
+  /// asignar el ID recién generado por Firestore después de `add`.
+  TaskItem copyWith({
+    String? id,
+    String? titulo,
+    String? descripcion,
+    String? subjectId,
+    String? importancia,
+    DateTime? fechaLimite,
+    bool? completada,
+    DateTime? completadaEn,
+    String? gradeItemId,
+    double? pesoEnGradeItem,
+    double? nota,
+    List<TaskReminder>? recordatorios,
+    DateTime? creadoEn,
+  }) {
+    return TaskItem(
+      id: id ?? this.id,
+      titulo: titulo ?? this.titulo,
+      descripcion: descripcion ?? this.descripcion,
+      subjectId: subjectId ?? this.subjectId,
+      importancia: importancia ?? this.importancia,
+      fechaLimite: fechaLimite ?? this.fechaLimite,
+      completada: completada ?? this.completada,
+      completadaEn: completadaEn ?? this.completadaEn,
+      gradeItemId: gradeItemId ?? this.gradeItemId,
+      pesoEnGradeItem: pesoEnGradeItem ?? this.pesoEnGradeItem,
+      nota: nota ?? this.nota,
+      recordatorios: recordatorios ?? this.recordatorios,
+      creadoEn: creadoEn ?? this.creadoEn,
+    );
+  }
 }

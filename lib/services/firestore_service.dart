@@ -5,6 +5,7 @@ import '../models/grade_item.dart';
 import '../models/note.dart';
 import '../models/subject.dart';
 import '../models/task_item.dart';
+import 'notification_service.dart';
 
 /// Resumen de cuántos hijos tiene una materia. Útil para decidir si se
 /// puede borrar.
@@ -164,11 +165,14 @@ class FirestoreService {
   }
 
   Future<void> addTask(TaskItem task) async {
-    await _col('tasks').add(task.toMap());
+    final docRef = await _col('tasks').add(task.toMap());
     // Si la tarea aporta a un grade item, recalcular la nota agregada.
     if (task.gradeItemId != null) {
       await _recalcGradeItemNota(task.gradeItemId!);
     }
+    // Programar los recordatorios de la tarea con el ID recién asignado.
+    await NotificationService.instance
+        .programarRecordatoriosDeTarea(task.copyWith(id: docRef.id));
   }
 
   Future<void> updateTask(String id, TaskItem task) async {
@@ -183,6 +187,7 @@ class FirestoreService {
       'subjectId': task.subjectId,
       'importancia': task.importancia,
       'fechaLimite': Timestamp.fromDate(task.fechaLimite),
+      'recordatorios': task.recordatorios.map((r) => r.toMap()).toList(),
     };
     // Campos opcionales del vínculo a un grade item: si están en null,
     // los borramos del documento.
@@ -201,6 +206,12 @@ class FirestoreService {
     for (final gid in affected) {
       await _recalcGradeItemNota(gid);
     }
+
+    // Re-programar recordatorios (internamente cancela los viejos primero).
+    // Si el usuario cambió la fecha límite o la lista de recordatorios, se
+    // ajusta automáticamente.
+    await NotificationService.instance
+        .programarRecordatoriosDeTarea(task.copyWith(id: id));
   }
 
   /// Marca una tarea como completada o pendiente. Si `completada == true`
@@ -211,11 +222,29 @@ class FirestoreService {
       'completadaEn':
           completada ? FieldValue.serverTimestamp() : FieldValue.delete(),
     });
+
+    if (completada) {
+      // Tarea completada → cancelamos sus recordatorios.
+      await NotificationService.instance.cancelarRecordatoriosDeTarea(id);
+    } else {
+      // Tarea reactivada → reprogramamos los recordatorios que aún no
+      // hayan disparado (los pasados se omiten automáticamente).
+      final doc = await _col('tasks').doc(id).get();
+      if (doc.exists) {
+        final task = TaskItem.fromDoc(doc);
+        await NotificationService.instance
+            .programarRecordatoriosDeTarea(task);
+      }
+    }
   }
 
   /// Borra una tarea y todas sus notas asociadas (con `taskId == id`).
   /// Si la tarea aportaba a un grade item, recalcula su nota.
+  /// Cancela también todas sus notificaciones pendientes.
   Future<void> deleteTask(String id) async {
+    // Cancelar recordatorios antes de borrar la tarea de Firestore.
+    await NotificationService.instance.cancelarRecordatoriosDeTarea(id);
+
     // Capturar gradeItemId antes de borrar para poder recalcular después.
     final doc = await _col('tasks').doc(id).get();
     final gradeItemId = doc.data()?['gradeItemId'] as String?;

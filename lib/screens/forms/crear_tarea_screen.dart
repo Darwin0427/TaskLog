@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/task_item.dart';
+import '../../models/task_reminder.dart';
 import '../../services/firestore_service.dart';
 import '../../utils/error_messages.dart';
 import '../../widgets/grade_item_chips_selector.dart';
 import '../../widgets/importancia_selector.dart';
 import '../../widgets/subject_chips_selector.dart';
+import 'seleccionar_recordatorios_screen.dart';
 
 class CrearTareaScreen extends StatefulWidget {
   /// Si se pasa, edita una tarea existente. Si es null, crea una nueva.
@@ -37,6 +39,7 @@ class _CrearTareaScreenState extends State<CrearTareaScreen> {
   String? _gradeItemId;
   String _importancia = 'Media';
   DateTime? _fechaLimite;
+  List<TaskReminder> _recordatorios = const <TaskReminder>[];
   bool _saving = false;
 
   @override
@@ -52,6 +55,37 @@ class _CrearTareaScreenState extends State<CrearTareaScreen> {
     _gradeItemId = e?.gradeItemId;
     _importancia = e?.importancia ?? 'Media';
     _fechaLimite = e?.fechaLimite;
+    // Al crear una tarea nueva, aplicamos los defaults según importancia.
+    // Al editar, respetamos los que el usuario tenía configurados.
+    _recordatorios = e != null
+        ? List<TaskReminder>.from(e.recordatorios)
+        : _defaultRecordatoriosFor(_importancia);
+  }
+
+  /// Recordatorios por defecto para una tarea nueva, según su importancia.
+  /// Todos a las 9:00 AM.
+  static List<TaskReminder> _defaultRecordatoriosFor(String importancia) {
+    const hora = 9;
+    const minuto = 0;
+    List<int> dias;
+    switch (importancia) {
+      case 'Alta':
+        dias = <int>[7, 3, 1, 0];
+        break;
+      case 'Baja':
+        dias = <int>[0];
+        break;
+      case 'Media':
+      default:
+        dias = <int>[3, 1];
+    }
+    return dias
+        .map((d) => TaskReminder(
+              diasAntes: d,
+              hora: hora,
+              minuto: minuto,
+            ))
+        .toList();
   }
 
   @override
@@ -133,6 +167,7 @@ class _CrearTareaScreenState extends State<CrearTareaScreen> {
         completadaEn: widget.existing?.completadaEn,
         gradeItemId: _gradeItemId,
         nota: nota,
+        recordatorios: _recordatorios,
       );
       if (widget.isEditing) {
         await FirestoreService.instance.updateTask(widget.existing!.id, task);
@@ -212,6 +247,25 @@ class _CrearTareaScreenState extends State<CrearTareaScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            _Label('Recordatorios'),
+            const SizedBox(height: 8),
+            _RecordatoriosCardCompact(
+              count: _recordatorios.length,
+              onTap: () async {
+                final result = await Navigator.of(context)
+                    .push<List<TaskReminder>>(
+                  MaterialPageRoute(
+                    builder: (_) => SeleccionarRecordatoriosScreen(
+                      initial: _recordatorios,
+                    ),
+                  ),
+                );
+                if (result != null && mounted) {
+                  setState(() => _recordatorios = result);
+                }
+              },
+            ),
+            const SizedBox(height: 24),
             _Label('Vincular a una calificación (opcional)'),
             const SizedBox(height: 4),
             Text(
@@ -278,4 +332,73 @@ class _Label extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
       );
+}
+
+/// Card compacta que aparece en el formulario para indicar cuántos
+/// recordatorios están configurados y abrir la pantalla de selección.
+/// Sigue el mismo patrón que el card del detalle de tarea.
+class _RecordatoriosCardCompact extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _RecordatoriosCardCompact({
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final subtitle = count == 0
+        ? 'Ninguno configurado'
+        : '$count ${count == 1 ? "configurado" : "configurados"}';
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.notifications_active_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Toca para configurar antes del vencimiento',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

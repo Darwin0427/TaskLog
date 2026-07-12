@@ -8,6 +8,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'firebase_options.dart';
 import 'screens/auth/auth_gate.dart';
 import 'screens/splash_screen.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -45,6 +46,15 @@ class GestorTareasApp extends StatelessWidget {
       }
 
       await initializeDateFormatting('es');
+
+      // Notificaciones locales. Si falla, no es fatal — la app funciona
+      // igual, solo que sin recordatorios.
+      try {
+        await NotificationService.instance.initialize();
+      } catch (e) {
+        debugPrint('NotificationService init falló: $e');
+      }
+
       return null;
     } catch (e) {
       return 'No se pudo iniciar: $e';
@@ -54,6 +64,7 @@ class GestorTareasApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: NotificationService.navigatorKey,
       title: 'Gestor de tareas',
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),

@@ -1,76 +1,105 @@
-# Plan: Recordatorios personalizados por tarea
+# Recordatorios personalizados por tarea
 
-> **Estado**: Propuesta · No implementado todavía
-> **Prioridad**: Alta (feature destacada, diferenciador frente a otras apps)
+> **Estado**: Implementado ✅
+> **Prioridad**: Alta — feature destacada y diferenciador principal.
+
+Este documento describe cómo funcionan los recordatorios y notificaciones
+en TaskLog. Inicialmente era un plan de trabajo; ahora está construido y
+verificado en un Xiaomi con la app cerrada.
 
 ---
 
 ## Resumen
 
-La mayoría de apps de tareas envían un único recordatorio el día de la
-entrega. Este plan agrega **recordatorios personalizables por tarea**: el
-usuario decide cuántos avisos quiere y cuándo, de forma independiente por
-cada tarea.
+A diferencia de la mayoría de apps de tareas, que envían un único
+recordatorio el día de la entrega, TaskLog permite **recordatorios
+personalizables por tarea**: el usuario decide cuántos avisos quiere y
+cuándo, de forma independiente por cada tarea.
 
 ### Ejemplo de uso real
 
-Para una tarea "Parcial 1" que vence el 30 de mayo, el usuario podría
+Para una tarea *"Parcial 1"* que vence el 30 de mayo, el usuario puede
 tener:
 
-- 27 may 9:00 AM — *"3 días antes"*
-- 29 may 6:00 PM — *"1 día antes"*
-- 30 may 8:00 AM — *"El día de"*
+- 27 may 9:00 — *"3 días antes"*
+- 29 may 18:00 — *"1 día antes"*
+- 30 may 8:00 — *"El día de"*
 
-Cada tarea tendría su propia configuración, independiente de las demás.
+Cada tarea con su propia configuración, independiente de las demás.
 
 ---
 
-## Cómo se verá
+## Cómo se ve para el usuario
 
 ### En el formulario de tarea
 
-Después del campo "Fecha límite" aparece una nueva sección con chips
-horizontales para activar/desactivar recordatorios y un botón para agregar
-uno personalizado:
+Cuando el usuario crea o edita una tarea, en la sección "Recordatorios"
+aparece una **card compacta** con el conteo y una flecha:
 
 ```
 ─────────────────────────────────────────
-RECORDATORIOS
-   ┌──────────────────────┐ ┌─────────────┐
-   │ ✓ El día de · 8:00   │ │ ✗ 1d antes  │
-   └──────────────────────┘ └─────────────┘
-   ┌──────────────────────┐ ┌─────────────┐
-   │ ✓ 3d antes · 9:00    │ │ ✗ 1sem antes│
-   └──────────────────────┘ └─────────────┘
+Recordatorios
 
-   + Agregar recordatorio personalizado
+┌───────────────────────────────────────┐
+│ [🔔]  2 configurados               →  │
+│       Toca para configurar antes...   │
+└───────────────────────────────────────┘
 ─────────────────────────────────────────
 ```
 
-Cada chip se activa o desactiva con un toque. Tocar la hora abre un selector
-para cambiarla. El botón "+" abre un modal donde se pueden combinar días,
-horas y minutos a voluntad.
+Al tocarla, se abre una pantalla dedicada con los chips de presets y el
+diálogo para agregar personalizados. Al volver, la card actualiza el
+conteo.
 
 ### En el detalle de tarea
 
-Una sección dedicada muestra los recordatorios ya programados con su fecha
-exacta calculada, y un botón de papelera al lado para borrarlos uno a uno:
+Card similar entre "Descripción" y "Notas asociadas":
 
 ```
-Recordatorios programados
-   27 may, 9:00 AM   (3 días antes)        [Eliminar]
-   29 may, 6:00 PM   (1 día antes)         [Eliminar]
-   30 may, 8:00 AM   (el día de)           [Eliminar]
-
-   + Agregar recordatorio
+┌───────────────────────────────────────┐
+│ [🔔]  Recordatorios                →  │
+│       3 programados                    │
+└───────────────────────────────────────┘
 ```
+
+Al tocarla, se abre `GestionRecordatoriosScreen` que muestra cada
+recordatorio con su fecha absoluta calculada y descripción relativa:
+
+```
+🔔 Recordatorios programados
+
+┌───────────────────────────────────────┐
+│  🔔  27 de may, 09:00              🗑 │
+│      3 días antes                      │
+├───────────────────────────────────────┤
+│  🔔  29 de may, 18:00              🗑 │
+│      1 día antes                       │
+├───────────────────────────────────────┤
+│  🔔  30 de may, 08:00              🗑 │
+│      el día de                         │
+└───────────────────────────────────────┘
+
+  + Agregar recordatorio
+```
+
+### La notificación en el celular
+
+Con formato contextual según cuánto falta:
+
+```
+🔔  TaskLog
+    Parcial 1
+    Hoy vence
+```
+
+Al **tocar la notificación**, la app abre directo al detalle de esa tarea.
 
 ---
 
 ## Presets por defecto según importancia
 
-Para que el formulario sea cómodo sin tener que configurar todo a mano, los
-recordatorios vienen pre-marcados según la importancia de la tarea:
+Cuando se crea una tarea nueva, los recordatorios vienen pre-marcados
+según su importancia:
 
 | Importancia | Recordatorios por defecto |
 |---|---|
@@ -78,161 +107,145 @@ recordatorios vienen pre-marcados según la importancia de la tarea:
 | **Media** | 3d antes, 1d antes |
 | **Baja** | el día de |
 
-La hora por defecto es las 9:00 AM, configurable por cada recordatorio.
+Hora por defecto: **9:00 AM** (formato 24h). El usuario puede modificar la
+hora de cada recordatorio con un `TimePicker` en modo teclado (dos campos
+numéricos, sin AM/PM).
+
+Al **editar** una tarea existente, se respetan los recordatorios que el
+usuario ya configuró — no se sobrescriben con los defaults.
+
+---
+
+## Comportamientos automáticos
+
+El sistema mantiene las notificaciones sincronizadas con el estado real
+de las tareas:
+
+- **Crear tarea con recordatorios** → se programan en el sistema.
+- **Editar la fecha límite o los recordatorios** → se cancelan los viejos
+  y se programan los nuevos.
+- **Marcar tarea como completada** → se cancelan sus recordatorios.
+- **Desmarcar (reactivar)** → se reprograman los que aún no hayan
+  disparado.
+- **Eliminar tarea** → se cancelan todos sus recordatorios.
+- **Recordatorio para una fecha ya pasada** → se omite sin error (por
+  ejemplo, agregar "7 días antes" a una tarea que vence mañana).
 
 ---
 
 ## Modelo de datos
 
-Cada tarea guarda una lista de recordatorios. Un recordatorio se describe
-con tres números: **cuántos días antes** del vencimiento debe sonar (0 = el
-día de), **a qué hora** (0-23) y **a qué minuto** (0-59). La fecha exacta
-se calcula al momento de programar la notificación, restando los días al
-vencimiento de la tarea.
+Cada tarea tiene un array `recordatorios` en Firestore, donde cada
+recordatorio se describe con tres números:
 
-Esta lista se almacena en Firestore dentro del documento de la tarea como
-un array de objetos, sin afectar la estructura existente.
+```json
+"recordatorios": [
+  { "diasAntes": 3, "hora": 9, "minuto": 0 },
+  { "diasAntes": 1, "hora": 18, "minuto": 0 },
+  { "diasAntes": 0, "hora": 8, "minuto": 0 }
+]
+```
 
----
+La fecha absoluta se calcula al momento de programar la notificación:
+`fechaLimite - diasAntes días @ hora:minuto local`.
 
-## Plan de implementación en 7 fases
-
-Cada fase es entregable e independiente — al terminarla, ya se puede
-verificar manualmente que funciona.
-
-### Fase 1 — Base del sistema de notificaciones
-
-Instalar el plugin de notificaciones locales, pedir los permisos
-correspondientes en Android e inicializar el servicio al arrancar la app.
-Se crea un canal específico llamado "Recordatorios de tareas" que el
-sistema operativo usa para agrupar y dar control al usuario.
-
-**Cómo verificarlo**: con un botón temporal de prueba, lanzar una
-notificación y confirmar que aparece en la bandeja del sistema.
-
-### Fase 2 — Modelo de recordatorios
-
-Definir el nuevo objeto `TaskReminder` y extender el modelo de tarea para
-incluir la lista de recordatorios. Adaptar la lectura y escritura contra
-Firestore para que persista correctamente.
-
-**Cómo verificarlo**: crear una tarea con recordatorios programáticamente
-y revisar en la consola de Firestore que se guarda como un array de mapas.
-
-### Fase 3 — Interfaz de configuración
-
-Construir el widget que permite al usuario activar, desactivar y
-personalizar los recordatorios desde el formulario de la tarea. Incluye
-los chips de presets, el selector de hora y el modal de recordatorio
-personalizado. Aplicar los defaults inteligentes según la importancia.
-
-**Cómo verificarlo**: crear una tarea desde la UI con varios recordatorios
-y confirmar que se guardan correctamente.
-
-### Fase 4 — Programación automática de notificaciones
-
-Conectar la lógica de programación con el sistema operativo. Cada vez que
-se crea o edita una tarea, la app calcula la fecha exacta de cada
-recordatorio y la registra en el sistema. Si la tarea se marca como
-completada o se elimina, las notificaciones se cancelan automáticamente.
-Si se desmarca, vuelven a programarse las que aún no han vencido.
-
-**Cómo verificarlo**: crear una tarea con un recordatorio para dentro de
-dos minutos, esperar y confirmar que la notificación llega.
-
-### Fase 5 — Visualización en el detalle
-
-Mostrar al usuario qué recordatorios tiene programados para esa tarea,
-con la fecha exacta ya calculada y una descripción legible ("3 días
-antes"). Permitir eliminarlos individualmente desde ahí o agregar nuevos
-sin tener que editar la tarea completa.
-
-**Cómo verificarlo**: abrir el detalle de una tarea con recordatorios,
-eliminar uno y comprobar que también se canceló su notificación
-correspondiente en el sistema.
-
-### Fase 6 — Onboarding para celulares con restricciones
-
-Detectar si el dispositivo es Xiaomi, Huawei u Oppo (fabricantes
-conocidos por restricciones agresivas en background) y, la primera vez,
-mostrar una pantalla guía con los pasos específicos para que las
-notificaciones lleguen confiablemente. Incluye accesos directos a los
-ajustes del sistema.
-
-**Cómo verificarlo**: en un Xiaomi, abrir la app por primera vez y
-confirmar que aparece el onboarding; abrirla una segunda vez y verificar
-que ya no se muestra.
-
-### Fase 7 — Testing y pulido
-
-Validación manual de los escenarios completos: notificaciones que llegan
-a tiempo, re-programación al editar fechas, cancelación al completar o
-borrar tareas, persistencia tras reiniciar el celular, manejo correcto
-de recordatorios cuya fecha ya pasó, y comportamiento esperado en
-dispositivos con restricciones.
+En Dart este es el modelo `TaskReminder` (`lib/models/task_reminder.dart`).
 
 ---
 
-## Plan B — MVP rápido
+## Implementación técnica
 
-Si se prefiere una versión más simple primero antes del plan completo:
+### Plugin usado: `awesome_notifications`
 
-1. **Un solo recordatorio por tarea** en lugar de una lista. Un campo de
-   fecha y hora únicos.
-2. **Cuatro presets fijos** sin opción de personalizar: "El día de",
-   "1 día antes", "3 días antes", "1 semana antes".
-3. **Sin onboarding de Xiaomi** — solo se agrega si en pruebas reales
-   aparecen problemas.
+El plan original apuntaba a `flutter_local_notifications`, pero durante
+la implementación descubrimos que ese plugin usa `AlarmManager` puro, que
+MIUI (Xiaomi) mata en background. Migramos a **`awesome_notifications`**
+que internamente usa **`WorkManager`**, mucho más respetuoso con las
+políticas de restricción de fabricantes agresivos.
 
-Esta versión cubre el 80% del valor con una fracción del trabajo. Después
-se puede iterar hacia el plan completo si la feature se valida con
-usuarios reales.
+Con esta migración, las notificaciones llegan puntuales incluso con la
+app cerrada en Xiaomi, después de que el usuario configure los ajustes
+del sistema (autoinicio + sin restricciones de batería).
+
+### Canal Android
+
+- **Key**: `recordatorios_tareas`
+- **Nombre**: "Recordatorios de tareas"
+- **Importancia**: `Max` (heads-up banner, no puede ser silenciado)
+- **Categoría por notificación**: `Alarm` (máxima prioridad para
+  esquivar restricciones)
+- **Wake up screen**: sí
+- **Sonido y vibración**: usa los que el usuario tenga configurados
+
+### IDs de notificación
+
+Determinísticos por tarea + índice del recordatorio:
+
+```
+id = (hash(taskId) & 0x7FFFFFFF) % 20_000_000 * 100 + índice
+```
+
+Esto permite cancelar recordatorios específicos de una tarea sin afectar
+los de otras.
+
+### Timezone
+
+`flutter_timezone` se usa para configurar `tz.local` con la zona horaria
+real del dispositivo (por ejemplo `America/Bogota`). Sin esto, `tz.local`
+quedaría en UTC y las fechas se desfasarían.
+
+### Navegación al tap
+
+Se registra un `GlobalKey<NavigatorState>` en `MaterialApp`. El callback
+`onActionReceivedMethod` de `awesome_notifications` lo usa para hacer
+push a `DetalleTareaScreen` con el `taskId` del payload.
 
 ---
 
 ## Limitaciones conocidas (Xiaomi y similares)
 
-MIUI (el sistema de Xiaomi) cierra aplicaciones en segundo plano de forma
-agresiva. Para que los recordatorios sean confiables, el usuario debe
+MIUI (Xiaomi) y sistemas similares (EMUI de Huawei, ColorOS de Oppo,
+FuntouchOS de Vivo) cierran aplicaciones en background de forma agresiva.
+Para que los recordatorios sean 100% confiables, el usuario debe
 configurar tres ajustes en su celular:
 
-1. **Ajustes → Aplicaciones → TaskLog → Inicio automático**: activar.
-2. **Ahorro de batería**: marcar la app como "sin restricciones".
-3. **Otros permisos → Mostrar en pantalla bloqueada**: activar.
+1. **Ajustes → Aplicaciones → TaskLog → Alarmas y recordatorios** → ON.
+2. **Ajustes → Aplicaciones → TaskLog → Ahorrar batería** → "Sin
+   restricciones".
+3. **Ajustes → Permisos → Autoinicio → TaskLog** → ON.
 
-Esto **no es un bug de la app**: ocurre con cualquier app en Xiaomi,
-incluyendo WhatsApp, Gmail y Telegram. Por eso la Fase 6 del plan agrega
-una pantalla de onboarding que explica al usuario estos pasos la primera
-vez que abre la app en un dispositivo afectado.
+Esto **no es un bug de TaskLog** — pasa con cualquier app en Xiaomi,
+incluyendo WhatsApp, Gmail y Telegram. Es la razón por la cual mucha
+gente configura las apps de mensajería al comprar un Xiaomi.
 
-Otros fabricantes con restricciones similares: Huawei, Oppo, Vivo y
-Realme.
+Una futura versión podría incluir una pantalla de onboarding que detecte
+el fabricante y guíe al usuario a estos ajustes automáticamente
+(feature en el roadmap del README).
 
 ---
 
-## Librerías que se usarían
+## Librerías usadas
 
-| Librería | Para qué sirve |
+| Librería | Para qué |
 |---|---|
-| `flutter_local_notifications` | Programar notificaciones locales en Android e iOS. |
-| `timezone` | Manejo correcto de zonas horarias para que las notificaciones lleguen a la hora exacta. |
-| `app_settings` | Abrir directamente los ajustes nativos del sistema desde la app. |
-| `device_info_plus` | Detectar el fabricante del dispositivo para mostrar el onboarding solo cuando hace falta. |
-| `shared_preferences` | Guardar localmente la marca de "onboarding completado" para no repetirlo. |
+| `awesome_notifications: ^0.10.1` | Motor principal de notificaciones locales, con WorkManager por debajo. |
+| `timezone: ^0.9.4` | Base de datos de zonas horarias. |
+| `flutter_timezone: ^3.0.1` | Obtiene la zona horaria del dispositivo para configurar `tz.local`. |
 
 ---
 
-## Decisiones por tomar antes de implementar
+## Archivos relevantes en el código
 
-Antes de empezar conviene cerrar estas decisiones de producto:
-
-- Confirmar qué presets son los más útiles para estudiantes (los cuatro
-  propuestos u otros).
-- Definir si la hora por defecto es 9:00 AM fija o si el usuario la elige
-  globalmente la primera vez.
-- Decidir qué pasa si el usuario cambia la importancia de una tarea
-  después de crearla: ¿se actualizan los recordatorios automáticamente al
-  preset nuevo, o se respetan los que el usuario ya configuró?
-- Definir el texto del cuerpo de la notificación. Opciones a evaluar:
-  *"Vence en X días"*, *"Mañana vence: [título]"*, *"Hoy vence:
-  [título]"*.
+- `lib/models/task_reminder.dart` — modelo del recordatorio.
+- `lib/models/task_item.dart` — extendido con `List<TaskReminder>
+  recordatorios`.
+- `lib/services/notification_service.dart` — programación, cancelación,
+  navegación al tap.
+- `lib/services/firestore_service.dart` — engancha `add`, `update`,
+  `delete` y `setTaskCompletada` con el servicio de notificaciones.
+- `lib/widgets/recordatorios_selector.dart` — chips de presets + diálogo
+  de agregar personalizado.
+- `lib/screens/forms/seleccionar_recordatorios_screen.dart` — pantalla
+  para configurar recordatorios al crear/editar tarea.
+- `lib/screens/tasks/gestion_recordatorios_screen.dart` — pantalla para
+  gestionar recordatorios desde el detalle de tarea.

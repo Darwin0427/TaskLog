@@ -14,6 +14,9 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Requerido por flutter_local_notifications 17.x — traduce APIs
+        // modernas de Java (java.time) para funcionar en Android antiguos.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -38,10 +41,28 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            // DIAGNÓSTICO TEMPORAL: deshabilitamos la minificación de R8
+            // para descartar completamente que sea culpable de que las
+            // notificaciones programadas no lleguen. Si con esto funciona,
+            // afinamos las reglas de proguard. Si no funciona, es otro
+            // problema y podemos re-habilitar.
+            isMinifyEnabled = false
+            isShrinkResources = false
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Necesario junto con `isCoreLibraryDesugaringEnabled = true`.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

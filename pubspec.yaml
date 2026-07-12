@@ -23,10 +23,27 @@ dependencies:
   table_calendar: ^3.1.2
   intl: ^0.20.2
 
+  # Notificaciones locales (awesome_notifications reemplaza al plugin
+  # anterior — mejor soporte para MIUI/Xiaomi).
+  awesome_notifications: ^0.10.1
+  timezone: ^0.9.4
+  flutter_timezone: ^3.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.0
 
 flutter:
   uses-material-design: true
+
+# Configuración del ícono del launcher.
+# Se aplica corriendo: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: false
+  image_path: "LogoTaskLog.jpeg"
+  min_sdk_android: 21
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "LogoTaskLog.jpeg"
