@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/animated_list_item.dart';
 import '../../widgets/empty_state.dart';
 import '../forms/crear_materia_screen.dart';
+import '../notifications/onboarding_notificaciones_screen.dart';
 import 'detalle_materia_screen.dart';
 
 class GradesScreen extends StatelessWidget {
@@ -19,6 +20,16 @@ class GradesScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Calificaciones'),
         actions: [
+          IconButton(
+            tooltip: 'Ajustes de notificaciones',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    const OnboardingNotificacionesScreen(allowSkip: true),
+              ),
+            ),
+            icon: const Icon(Icons.notifications_active_outlined),
+          ),
           IconButton(
             tooltip: 'Cerrar sesión',
             onPressed: () async {

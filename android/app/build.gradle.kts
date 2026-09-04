@@ -62,6 +62,15 @@ flutter {
     source = "../.."
 }
 
+// Excluye la vieja Android Support Library. El paquete
+// `disable_battery_optimization` la arrastra transitivamente y choca
+// con `androidx.core` (duplicate classes en INotificationSideChannel,
+// ResultReceiver, etc.). Todo el ecosistema moderno usa AndroidX, así
+// que esta exclusión es segura y estándar.
+configurations.all {
+    exclude(group = "com.android.support")
+}
+
 dependencies {
     // Necesario junto con `isCoreLibraryDesugaringEnabled = true`.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")

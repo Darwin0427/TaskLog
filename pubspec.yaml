@@ -29,6 +29,13 @@ dependencies:
   timezone: ^0.9.4
   flutter_timezone: ^3.0.1
 
+  # Onboarding de notificaciones (Fase 6): detección de fabricante y
+  # deep-links a settings específicas de MIUI/Huawei/Oppo/Vivo/Realme
+  # para que el usuario configure autoinicio + batería sin fricción.
+  disable_battery_optimization: ^1.1.2
+  device_info_plus: ^10.1.2
+  shared_preferences: ^2.3.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

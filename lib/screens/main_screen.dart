@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../services/notification_setup_service.dart';
 import '../theme/app_theme.dart';
 import 'calendar/calendar_screen.dart';
 import 'forms/crear_nota_screen.dart';
 import 'forms/crear_tarea_screen.dart';
 import 'grades/grades_screen.dart';
+import 'notifications/onboarding_notificaciones_screen.dart';
 import 'tasks/tasks_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -33,6 +35,38 @@ class _MainScreenState extends State<MainScreen>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     );
+    // Después del primer frame, evaluar si toca mostrar el onboarding
+    // de notificaciones (primera vez + fabricante restrictivo).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeShowNotificationsOnboarding();
+    });
+  }
+
+  Future<void> _maybeShowNotificationsOnboarding() async {
+    // Ojo: es best-effort. Si algo falla (ej. web), simplemente no se
+    // muestra el onboarding — la app sigue funcionando.
+    try {
+      final setup = NotificationSetupService.instance;
+      final already = await setup.hasCompletedOnboarding();
+      if (already) return;
+      final isRestrictive = await setup.isRestrictiveManufacturer();
+      if (!isRestrictive) {
+        // En dispositivos no restrictivos, solo pedimos el permiso de
+        // notificaciones base sin todo el flujo.
+        await setup.requestNotificationPermission();
+        await setup.markOnboardingCompleted();
+        return;
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              const OnboardingNotificacionesScreen(allowSkip: true),
+        ),
+      );
+    } catch (_) {
+      // Silencioso — no bloqueamos al usuario si algo falla en el setup.
+    }
   }
 
   @override

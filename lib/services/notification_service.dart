@@ -217,4 +217,40 @@ class NotificationService {
     return 'Faltan ${r.diasAntes} días';
   }
 
+  // ─────────────────────────── test (usado por onboarding) ───────────────────
+
+  /// Programa una notificación de prueba a `delay` segundos en el futuro.
+  /// Usada por la pantalla de onboarding de notificaciones para que el
+  /// usuario verifique en vivo que la configuración quedó correcta.
+  Future<bool> scheduleTestNotification({
+    Duration delay = const Duration(seconds: 15),
+  }) async {
+    if (kIsWeb) return false;
+    final target = DateTime.now().add(delay);
+    _log('scheduleTestNotification target=${target.toIso8601String()}');
+    try {
+      final ok = await AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: 777777,
+          channelKey: _channelKey,
+          title: 'TaskLog',
+          body: '¡Funciona! Las notificaciones llegan a tiempo.',
+          payload: {'taskId': 'test'},
+          notificationLayout: NotificationLayout.Default,
+          category: NotificationCategory.Alarm,
+          wakeUpScreen: true,
+        ),
+        schedule: NotificationCalendar.fromDate(
+          date: target,
+          preciseAlarm: true,
+          allowWhileIdle: true,
+        ),
+      );
+      _log('scheduleTestNotification ${ok ? "OK" : "no-op"}');
+      return ok;
+    } catch (e) {
+      _log('scheduleTestNotification falló: $e');
+      return false;
+    }
+  }
 }
