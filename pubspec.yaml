@@ -49,7 +49,9 @@ flutter:
 # Se aplica corriendo: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: "ic_launcher"
-  ios: false
+  ios: true
+  # Apple rechaza íconos con transparencia.
+  remove_alpha_ios: true
   image_path: "LogoTaskLog.jpeg"
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"

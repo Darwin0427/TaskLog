@@ -8,6 +8,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/task_item.dart';
 import '../models/task_reminder.dart';
 import '../screens/tasks/detalle_tarea_screen.dart';
+import '../utils/recordatorios_scheduler.dart';
 
 /// Servicio centralizado de notificaciones locales, basado en el plugin
 /// `awesome_notifications`.
@@ -40,6 +41,21 @@ class NotificationService {
   static const String _channelName = 'Recordatorios de tareas';
   static const String _channelDescription =
       'Avisos programados de tareas cercanas a vencer';
+
+  /// ID fijo de la notificación de prueba del onboarding.
+  static const int _testNotificationId = 777777;
+
+  /// Máximo de recordatorios que dejamos programados a la vez.
+  ///
+  /// iOS solo guarda 64 notificaciones locales pendientes por app y
+  /// descarta las demás en silencio; dejamos margen para la de prueba.
+  /// Android no tiene ese tope tan bajo (el sistema limita alrededor de
+  /// 500 alarmas por app), así que ahí el margen es mucho mayor.
+  static int get limiteProgramadas =>
+      defaultTargetPlatform == TargetPlatform.iOS ? 60 : 400;
+
+  /// Cola para que dos sincronizaciones no se pisen entre sí.
+  Future<void> _colaSync = Future<void>.value();
 
   // ─────────────────────────── inicialización ───────────────────────────
 
@@ -130,6 +146,47 @@ class NotificationService {
 
   // ─────────────────────────── programación ───────────────────────────
 
+  /// Sincroniza las notificaciones programadas con la lista completa de
+  /// tareas del usuario.
+  ///
+  /// Cancela los recordatorios que haya en el sistema y vuelve a programar
+  /// solo los [limiteProgramadas] más cercanos (ver
+  /// `seleccionarProximosRecordatorios`). Es el punto de entrada principal:
+  /// se llama al abrir la app y cada vez que cambia una tarea.
+  Future<void> sincronizarRecordatorios(List<TaskItem> tareas) {
+    if (kIsWeb) return Future<void>.value();
+    _colaSync = _colaSync.then((_) => _sincronizar(tareas));
+    return _colaSync;
+  }
+
+  Future<void> _sincronizar(List<TaskItem> tareas) async {
+    try {
+      final seleccion = seleccionarProximosRecordatorios(
+        tareas,
+        ahora: DateTime.now(),
+        limite: limiteProgramadas,
+      );
+
+      final programadas =
+          await AwesomeNotifications().listScheduledNotifications();
+      for (final n in programadas) {
+        final id = n.content?.id;
+        if (id == null || id == _testNotificationId) continue;
+        await AwesomeNotifications().cancel(id);
+      }
+
+      for (final p in seleccion) {
+        await _crearRecordatorio(p.task, p.indice, p.recordatorio, p.fecha);
+      }
+      _log('sync: ${seleccion.length} programados '
+          '(límite $limiteProgramadas, tareas ${tareas.length})');
+    } catch (e) {
+      _log('sync falló: $e');
+    }
+  }
+
+  /// Programa los recordatorios de una sola tarea, sin respetar el límite
+  /// global. Preferir [sincronizarRecordatorios].
   Future<void> programarRecordatoriosDeTarea(TaskItem task) async {
     _log('programar id=${task.id} n=${task.recordatorios.length} '
         'fL=${task.fechaLimite.toIso8601String().substring(0, 16)}');
@@ -146,36 +203,43 @@ class NotificationService {
         _log('  #$i saltado: fecha pasada');
         continue;
       }
+      await _crearRecordatorio(task, i, r, fecha);
+    }
+  }
 
-      final id = _notificationId(task.id, i);
-      final body = _construirBody(r);
-      _log('  #$i id=$id fecha=${fecha.toIso8601String().substring(0, 16)}');
-
-      try {
-        final ok = await AwesomeNotifications().createNotification(
-          content: NotificationContent(
-            id: id,
-            channelKey: _channelKey,
-            title: task.titulo,
-            body: body,
-            payload: {'taskId': task.id},
-            notificationLayout: NotificationLayout.Default,
-            // `Alarm` mantiene la prioridad alta (esquiva restricciones de
-            // MIUI) pero sin `fullScreenIntent` para que se comporte como
-            // notificación normal, no como despertador.
-            category: NotificationCategory.Alarm,
-            wakeUpScreen: true,
-          ),
-          schedule: NotificationCalendar.fromDate(
-            date: fecha,
-            preciseAlarm: true,
-            allowWhileIdle: true,
-          ),
-        );
-        _log('  #$i ${ok ? "OK" : "no-op"}');
-      } catch (e) {
-        _log('  #$i falló: $e');
-      }
+  Future<void> _crearRecordatorio(
+    TaskItem task,
+    int indice,
+    TaskReminder r,
+    DateTime fecha,
+  ) async {
+    final id = _notificationId(task.id, indice);
+    try {
+      final ok = await AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: id,
+          channelKey: _channelKey,
+          title: task.titulo,
+          body: _construirBody(r),
+          payload: {'taskId': task.id},
+          notificationLayout: NotificationLayout.Default,
+          // `Alarm` mantiene la prioridad alta (esquiva restricciones de
+          // MIUI) pero sin `fullScreenIntent` para que se comporte como
+          // notificación normal, no como despertador.
+          category: NotificationCategory.Alarm,
+          wakeUpScreen: true,
+        ),
+        schedule: NotificationCalendar.fromDate(
+          date: fecha,
+          preciseAlarm: true,
+          allowWhileIdle: true,
+        ),
+      );
+      _log('  #$indice id=$id '
+          'fecha=${fecha.toIso8601String().substring(0, 16)} '
+          '${ok ? "OK" : "no-op"}');
+    } catch (e) {
+      _log('  #$indice falló: $e');
     }
   }
 
@@ -231,7 +295,7 @@ class NotificationService {
     try {
       final ok = await AwesomeNotifications().createNotification(
         content: NotificationContent(
-          id: 777777,
+          id: _testNotificationId,
           channelKey: _channelKey,
           title: 'TaskLog',
           body: '¡Funciona! Las notificaciones llegan a tiempo.',

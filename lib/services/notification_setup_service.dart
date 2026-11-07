@@ -100,7 +100,9 @@ class NotificationSetupService {
 
   Future<AndroidDeviceInfo?> _androidInfo() async {
     if (_cachedAndroidInfo != null) return _cachedAndroidInfo;
-    if (kIsWeb) return null;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return null;
+    }
     try {
       _cachedAndroidInfo = await DeviceInfoPlugin().androidInfo;
       return _cachedAndroidInfo;
@@ -112,6 +114,10 @@ class NotificationSetupService {
 
   Future<String> getManufacturer() async {
     if (kIsWeb) return 'web';
+    // En iPhone no hay fabricantes "agresivos": el sistema dispara las
+    // notificaciones programadas por su cuenta. Este servicio (y su
+    // onboarding) solo aplican a Android.
+    if (defaultTargetPlatform == TargetPlatform.iOS) return 'apple';
     final info = await _androidInfo();
     return (info?.manufacturer ?? 'unknown').toLowerCase().trim();
   }

@@ -39,6 +39,12 @@ continuar sin problema.
 - Conexión a internet la primera vez. Después la app funciona offline y
   sincroniza al volver la conexión.
 
+### 1b. Instalar en iPhone
+
+No hace falta Mac: GitHub compila la versión de iPhone en la nube y se
+instala desde Windows con Sideloadly. Guía paso a paso en
+[`docs/IOS.md`](docs/IOS.md).
+
 ### 2. Crear cuenta
 
 Al abrir la app por primera vez aparece la pantalla de login.

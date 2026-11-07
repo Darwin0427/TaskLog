@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../services/firestore_service.dart';
 import '../services/notification_setup_service.dart';
 import '../theme/app_theme.dart';
 import 'calendar/calendar_screen.dart';
@@ -38,8 +41,19 @@ class _MainScreenState extends State<MainScreen>
     // Después del primer frame, evaluar si toca mostrar el onboarding
     // de notificaciones (primera vez + fabricante restrictivo).
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeShowNotificationsOnboarding();
+      unawaited(_prepararNotificaciones());
     });
+  }
+
+  /// Primero el permiso/onboarding (en iOS, sin permiso no se puede
+  /// programar nada) y después la sincronización de recordatorios.
+  ///
+  /// La sincronización reprograma los recordatorios más cercanos. En iOS es
+  /// lo que rellena el cupo de 64 a medida que se van disparando los
+  /// anteriores, y también los recupera tras reinstalar la app.
+  Future<void> _prepararNotificaciones() async {
+    await _maybeShowNotificationsOnboarding();
+    await FirestoreService.instance.sincronizarRecordatorios(soloCache: false);
   }
 
   Future<void> _maybeShowNotificationsOnboarding() async {

@@ -1,5 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'notification_service.dart';
+
 class AuthService {
   AuthService._();
   static final AuthService instance = AuthService._();
@@ -29,5 +31,10 @@ class AuthService {
     );
   }
 
-  Future<void> signOut() => _auth.signOut();
+  /// Cierra sesión y borra los recordatorios programados, para que quien
+  /// entre después en este teléfono no reciba los avisos de otra cuenta.
+  Future<void> signOut() async {
+    await NotificationService.instance.cancelarTodo();
+    await _auth.signOut();
+  }
 }

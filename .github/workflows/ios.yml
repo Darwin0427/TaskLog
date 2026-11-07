@@ -1,0 +1,105 @@
+# Compila TaskLog para iPhone en una Mac de GitHub y deja un .ipa SIN
+# FIRMAR para descargar. Ese .ipa se instala desde Windows con Sideloadly
+# (que lo firma con tu Apple ID). Guía completa: docs/IOS.md
+#
+# Cómo ejecutarlo:
+#   - Haz push a la rama `ios`, o
+#   - Ve a la pestaña Actions → "Compilar iOS" → "Run workflow"
+#     (este botón aparece cuando el archivo ya está en la rama principal).
+#
+# Requiere el secret FIREBASE_OPTIONS_DART (contenido completo de
+# lib/firebase_options.dart, generado con iOS incluido).
+
+name: Compilar iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ios]
+
+# Si haces dos push seguidos, cancela la compilación vieja.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    name: Generar TaskLog.ipa
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Crear lib/firebase_options.dart desde el secret
+        env:
+          FIREBASE_OPTIONS_DART: ${{ secrets.FIREBASE_OPTIONS_DART }}
+        run: |
+          if [ -z "$FIREBASE_OPTIONS_DART" ]; then
+            echo "::error::Falta el secret FIREBASE_OPTIONS_DART. Mira docs/IOS.md, paso 2."
+            exit 1
+          fi
+          printf '%s\n' "$FIREBASE_OPTIONS_DART" > lib/firebase_options.dart
+          if ! grep -q "FirebaseOptions ios" lib/firebase_options.dart; then
+            echo "::error::firebase_options.dart no tiene la configuración de iOS. Vuelve a correr flutterfire configure marcando iOS (docs/IOS.md, paso 1)."
+            exit 1
+          fi
+
+      - name: Crear GoogleService-Info.plist (opcional)
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            printf '%s\n' "$GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+            echo "GoogleService-Info.plist creado."
+          else
+            echo "Sin GoogleService-Info.plist: no es necesario, la app usa firebase_options.dart."
+          fi
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Usar CocoaPods (sin Swift Package Manager)
+        run: flutter config --no-enable-swift-package-manager
+
+      - name: Versiones
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Íconos de la app
+        run: dart run flutter_launcher_icons
+        continue-on-error: true
+
+      - name: Análisis estático
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        continue-on-error: true
+
+      - name: Pruebas
+        run: flutter test
+        continue-on-error: true
+
+      - name: Compilar para iPhone (sin firmar)
+        run: flutter build ios --release --no-codesign
+
+      - name: Empaquetar TaskLog.ipa
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          cd build/ipa
+          zip -qry TaskLog.ipa Payload
+          ls -lh TaskLog.ipa
+
+      - name: Subir el .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskLog-ipa
+          path: build/ipa/TaskLog.ipa
+          retention-days: 14
