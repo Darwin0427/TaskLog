@@ -36,6 +36,9 @@ dependencies:
   device_info_plus: ^10.1.2
   shared_preferences: ^2.3.2
 
+  # Abrir el enlace de la clase virtual (Meet, Teams…) desde la materia.
+  url_launcher: ^6.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -44,6 +47,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # Logo de TaskLog para el arranque y el inicio de sesión.
+    - assets/branding/icono_app.png
 
 # Configuración del ícono del launcher.
 # Se aplica corriendo: dart run flutter_launcher_icons

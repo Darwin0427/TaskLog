@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/firestore_service.dart';
 import '../services/notification_setup_service.dart';
+import '../widgets/ios_ui.dart';
 import '../widgets/tasklog_tab_bar.dart';
 import 'calendar/calendar_screen.dart';
 import 'forms/crear_materia_screen.dart';
@@ -117,16 +118,10 @@ class _MainScreenState extends State<MainScreen> {
     final Widget pantalla = switch (_index) {
       2 => const CrearMateriaScreen(),
       3 => const CrearNotaScreen(),
+      1 => CrearTareaScreen(fechaInicial: CalendarScreen.diaElegido.value),
       _ => const CrearTareaScreen(),
     };
-    // `fullscreenDialog` la presenta subiendo desde abajo, como una hoja
-    // de iOS. En la fase 4 los formularios pasan a ser hojas de verdad.
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => pantalla,
-      ),
-    );
+    await abrirFormulario<void>(context, pantalla);
   }
 
   @override

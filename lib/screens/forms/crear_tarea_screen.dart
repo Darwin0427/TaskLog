@@ -1,27 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/grade_item.dart';
+import '../../models/subject.dart';
 import '../../models/task_item.dart';
 import '../../models/task_reminder.dart';
 import '../../services/firestore_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/error_messages.dart';
-import '../../widgets/grade_item_chips_selector.dart';
-import '../../widgets/importancia_selector.dart';
+import '../../widgets/hoja_recordatorios.dart';
+import '../../widgets/ios_ui.dart';
 import '../../widgets/selectores_ios.dart';
-import '../../widgets/subject_chips_selector.dart';
-import 'seleccionar_recordatorios_screen.dart';
+import 'crear_materia_screen.dart';
 
+/// Recordatorios de fábrica según la prioridad (a las 9:00): Alta 7, 3,
+/// 1 y 0 días antes; Media 3 y 1; Baja solo el día.
+List<TaskReminder> recordatoriosPorDefecto(String importancia) {
+  final dias = switch (importancia) {
+    'Alta' => const <int>[7, 3, 1, 0],
+    'Baja' => const <int>[0],
+    _ => const <int>[3, 1],
+  };
+  return [
+    for (final d in dias) TaskReminder(diasAntes: d, hora: 9, minuto: 0),
+  ];
+}
+
+/// Nueva / editar tarea, como hoja: título y notas arriba; fecha con
+/// atajos (Hoy, Mañana, Lunes, Otra…) y hora opcional; materia, prioridad,
+/// recordatorios y evaluación en filas que abren menús u hojas.
 class CrearTareaScreen extends StatefulWidget {
-  /// Si se pasa, edita una tarea existente. Si es null, crea una nueva.
   final TaskItem? existing;
-
-  /// Materia preseleccionada al crear (ignorado en modo edición).
   final String? defaultSubjectId;
+
+  /// Fecha con la que arranca una tarea nueva (ej. el día elegido en el
+  /// calendario).
+  final DateTime? fechaInicial;
 
   const CrearTareaScreen({
     super.key,
     this.existing,
     this.defaultSubjectId,
+    this.fechaInicial,
   });
 
   bool get isEditing => existing != null;
@@ -31,375 +51,667 @@ class CrearTareaScreen extends StatefulWidget {
 }
 
 class _CrearTareaScreenState extends State<CrearTareaScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _tituloCtrl;
-  late final TextEditingController _descCtrl;
-  late final TextEditingController _notaCtrl;
+  late final TextEditingController _titulo;
+  late final TextEditingController _notas;
+  late final TextEditingController _nota;
 
-  String? _subjectId;
-  String? _gradeItemId;
+  String? _materiaId;
+  String? _evaluacionId;
   String _importancia = 'Media';
-  DateTime? _fechaLimite;
-  List<TaskReminder> _recordatorios = const <TaskReminder>[];
-  bool _saving = false;
+  late DateTime _dia;
+  TimeOfDay? _hora;
+  late List<TaskReminder> _recordatorios;
+
+  /// Mientras el usuario no toque los recordatorios de una tarea nueva,
+  /// se ajustan solos al cambiar la prioridad.
+  bool _recordatoriosTocados = false;
+  bool _guardando = false;
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
-    _tituloCtrl = TextEditingController(text: e?.titulo ?? '');
-    _descCtrl = TextEditingController(text: e?.descripcion ?? '');
-    _notaCtrl = TextEditingController(
-      text: e?.nota?.toStringAsFixed(1) ?? '',
-    );
-    _subjectId = e?.subjectId ?? widget.defaultSubjectId;
-    _gradeItemId = e?.gradeItemId;
+    _titulo = TextEditingController(text: e?.titulo ?? '');
+    _notas = TextEditingController(text: e?.descripcion ?? '');
+    _nota = TextEditingController(text: e?.nota?.toStringAsFixed(1) ?? '');
+    _materiaId = e?.subjectId ?? widget.defaultSubjectId;
+    _evaluacionId = e?.gradeItemId;
     _importancia = e?.importancia ?? 'Media';
-    _fechaLimite = e?.fechaLimite;
-    // Al crear una tarea nueva, aplicamos los defaults según importancia.
-    // Al editar, respetamos los que el usuario tenía configurados.
+    final base = e?.fechaLimite ?? widget.fechaInicial ?? DateTime.now();
+    _dia = soloDia(base);
+    _hora = e != null && tieneHora(e.fechaLimite)
+        ? TimeOfDay(hour: e.fechaLimite.hour, minute: e.fechaLimite.minute)
+        : null;
     _recordatorios = e != null
         ? List<TaskReminder>.from(e.recordatorios)
-        : _defaultRecordatoriosFor(_importancia);
-  }
-
-  /// Recordatorios por defecto para una tarea nueva, según su importancia.
-  /// Todos a las 9:00 AM.
-  static List<TaskReminder> _defaultRecordatoriosFor(String importancia) {
-    const hora = 9;
-    const minuto = 0;
-    List<int> dias;
-    switch (importancia) {
-      case 'Alta':
-        dias = <int>[7, 3, 1, 0];
-        break;
-      case 'Baja':
-        dias = <int>[0];
-        break;
-      case 'Media':
-      default:
-        dias = <int>[3, 1];
-    }
-    return dias
-        .map((d) => TaskReminder(
-              diasAntes: d,
-              hora: hora,
-              minuto: minuto,
-            ))
-        .toList();
+        : recordatoriosPorDefecto(_importancia);
+    _recordatoriosTocados = e != null;
   }
 
   @override
   void dispose() {
-    _tituloCtrl.dispose();
-    _descCtrl.dispose();
-    _notaCtrl.dispose();
+    _titulo.dispose();
+    _notas.dispose();
+    _nota.dispose();
     super.dispose();
   }
 
-  void _onSubjectChanged(String? id) {
+  DateTime get _fechaLimite => _hora == null
+      ? _dia
+      : DateTime(_dia.year, _dia.month, _dia.day, _hora!.hour, _hora!.minute);
+
+  void _cambiarImportancia(String v) {
     setState(() {
-      _subjectId = id;
-      // Al cambiar materia, ya no tiene sentido el grade item anterior.
-      _gradeItemId = null;
-      _notaCtrl.clear();
+      _importancia = v;
+      if (!_recordatoriosTocados) {
+        _recordatorios = recordatoriosPorDefecto(v);
+      }
     });
   }
 
-  void _onGradeItemChanged(String? id) {
-    setState(() {
-      _gradeItemId = id;
-      if (id == null) _notaCtrl.clear();
-    });
-  }
-
-  Future<void> _pickFecha() async {
-    final now = DateTime.now();
-    final picked = await elegirFecha(
-      context,
-      inicial: _fechaLimite ?? now,
-      primera: DateTime(now.year - 1),
-      ultima: DateTime(now.year + 5, 12, 31),
-      titulo: 'Fecha límite',
-    );
-    if (picked != null) setState(() => _fechaLimite = picked);
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_subjectId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona una materia')),
-      );
+  Future<void> _guardar() async {
+    final titulo = _titulo.text.trim();
+    if (titulo.isEmpty) {
+      _aviso('Escribe un título para la tarea.');
       return;
     }
-    if (_fechaLimite == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona una fecha límite')),
-      );
+    if (_materiaId == null) {
+      _aviso('Elige una materia.');
       return;
     }
-
-    // Validar la nota si está vinculada a un grade item.
     double? nota;
-    if (_gradeItemId != null) {
-      final notaRaw = _notaCtrl.text.replaceAll(',', '.').trim();
-      if (notaRaw.isNotEmpty) {
-        nota = double.tryParse(notaRaw);
-        if (nota == null || nota < 0 || nota > 5) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('La nota debe estar entre 0 y 5')),
-          );
-          return;
-        }
+    if (_evaluacionId != null && _nota.text.trim().isNotEmpty) {
+      nota = double.tryParse(_nota.text.replaceAll(',', '.').trim());
+      if (nota == null || nota < 0 || nota > 5) {
+        _aviso('La nota debe estar entre 0.0 y 5.0.');
+        return;
       }
     }
-
-    setState(() => _saving = true);
+    setState(() => _guardando = true);
     try {
-      final task = TaskItem(
+      final tarea = TaskItem(
         id: widget.existing?.id ?? '',
-        titulo: _tituloCtrl.text.trim(),
-        descripcion: _descCtrl.text.trim(),
-        subjectId: _subjectId!,
+        titulo: titulo,
+        descripcion: _notas.text.trim(),
+        subjectId: _materiaId!,
         importancia: _importancia,
-        fechaLimite: _fechaLimite!,
+        fechaLimite: _fechaLimite,
         completada: widget.existing?.completada ?? false,
         completadaEn: widget.existing?.completadaEn,
-        gradeItemId: _gradeItemId,
-        nota: nota,
+        gradeItemId: _evaluacionId,
+        nota: _evaluacionId == null ? null : nota,
         recordatorios: _recordatorios,
       );
       if (widget.isEditing) {
-        await FirestoreService.instance.updateTask(widget.existing!.id, task);
+        await FirestoreService.instance.updateTask(widget.existing!.id, tarea);
       } else {
-        await FirestoreService.instance.addTask(task);
+        await FirestoreService.instance.addTask(tarea);
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e);
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _guardando = false);
+        showErrorSnackBar(context, e);
+      }
     }
+  }
+
+  void _aviso(String texto) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
+  }
+
+  Future<void> _otraFecha() async {
+    final hoy = soloDia(DateTime.now());
+    final f = await elegirFecha(
+      context,
+      inicial: _dia,
+      primera: DateTime(hoy.year - 1),
+      ultima: DateTime(hoy.year + 5, 12, 31),
+      titulo: 'Fecha límite',
+    );
+    if (f != null) setState(() => _dia = f);
+  }
+
+  Future<void> _elegirHora() async {
+    final h = await elegirHora(
+      context,
+      inicial: _hora ?? const TimeOfDay(hour: 18, minute: 0),
+      titulo: 'Hora límite',
+    );
+    if (h != null) setState(() => _hora = h);
+  }
+
+  Future<void> _elegirEvaluacion() async {
+    if (_materiaId == null) {
+      _aviso('Primero elige la materia.');
+      return;
+    }
+    final items = await FirestoreService.instance
+        .watchGradeItemsBySubject(_materiaId!)
+        .first;
+    if (!mounted) return;
+    final p = TaskLogPalette.of(context);
+    final elegido = await abrirHojaMedia<String>(
+      context,
+      SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const EncabezadoHoja(titulo: 'Vincular a una evaluación'),
+              GrupoIOS(
+                children: [
+                  FilaIOS(
+                    titulo: 'Ninguna',
+                    trailing: _evaluacionId == null
+                        ? Icon(Icons.check_rounded, color: p.acento)
+                        : null,
+                    onTap: () => Navigator.of(context).pop(''),
+                  ),
+                  for (final g in items)
+                    FilaIOS(
+                      titulo: g.nombre,
+                      subtitulo: '${g.porcentaje.toStringAsFixed(0)} % de la '
+                          'materia',
+                      trailing: g.id == _evaluacionId
+                          ? Icon(Icons.check_rounded, color: p.acento)
+                          : null,
+                      onTap: () => Navigator.of(context).pop(g.id),
+                    ),
+                ],
+              ),
+              if (items.isEmpty)
+                const PieGrupo(
+                  'Esta materia no tiene evaluaciones. Créalas desde '
+                  'Materias.',
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (elegido == null) return;
+    setState(() {
+      _evaluacionId = elegido.isEmpty ? null : elegido;
+      if (_evaluacionId == null) _nota.clear();
+    });
+  }
+
+  /// Próximo lunes (si hoy es lunes, el de la otra semana).
+  static DateTime _proximoLunes(DateTime hoy) {
+    var dias = (DateTime.monday - hoy.weekday) % 7;
+    if (dias == 0) dias = 7;
+    return hoy.add(Duration(days: dias));
   }
 
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat("EEEE d 'de' MMMM, yyyy", 'es');
+    final p = TaskLogPalette.of(context);
+    final hoy = soloDia(DateTime.now());
+    final manana = hoy.add(const Duration(days: 1));
+    final lunes = _proximoLunes(hoy);
+    final esOtra = _dia != hoy && _dia != manana && _dia != lunes;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Editar tarea' : 'Nueva tarea'),
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              controller: _tituloCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Título *',
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _descCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Descripción',
-                alignLabelWithHint: true,
-              ),
-              maxLines: 4,
-            ),
-            const SizedBox(height: 24),
-            _Label('Materia *'),
-            const SizedBox(height: 8),
-            SubjectChipsSelector(
-              selectedId: _subjectId,
-              onChanged: _onSubjectChanged,
-            ),
-            const SizedBox(height: 24),
-            _Label('Importancia *'),
-            const SizedBox(height: 8),
-            Center(
-              child: ImportanciaSelector(
-                value: _importancia,
-                onChanged: (v) => setState(() => _importancia = v),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _Label('Fecha límite *'),
-            const SizedBox(height: 8),
-            Card(
-              child: ListTile(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+      body: SafeArea(
+        child: StreamBuilder<List<Subject>>(
+          stream: FirestoreService.instance.watchSubjects(),
+          builder: (context, sSnap) {
+            final materias = sSnap.data ?? const <Subject>[];
+            if (_materiaId == null && materias.isNotEmpty) {
+              _materiaId = materias.first.id;
+            }
+            Subject? materia;
+            for (final m in materias) {
+              if (m.id == _materiaId) materia = m;
+            }
+            return Column(
+              children: [
+                EncabezadoHoja(
+                  titulo: widget.isEditing ? 'Editar tarea' : 'Nueva tarea',
+                  onConfirmar: _guardar,
+                  guardando: _guardando,
                 ),
-                leading: const Icon(Icons.event),
-                title: Text(
-                  _fechaLimite == null
-                      ? 'Seleccionar fecha'
-                      : df.format(_fechaLimite!),
-                ),
-                trailing: const Icon(Icons.edit_calendar_outlined),
-                onTap: _pickFecha,
-              ),
-            ),
-            const SizedBox(height: 24),
-            _Label('Recordatorios'),
-            const SizedBox(height: 8),
-            _RecordatoriosCardCompact(
-              count: _recordatorios.length,
-              onTap: () async {
-                final result = await Navigator.of(context)
-                    .push<List<TaskReminder>>(
-                  MaterialPageRoute(
-                    builder: (_) => SeleccionarRecordatoriosScreen(
-                      initial: _recordatorios,
-                    ),
-                  ),
-                );
-                if (result != null && mounted) {
-                  setState(() => _recordatorios = result);
-                }
-              },
-            ),
-            const SizedBox(height: 24),
-            _Label('Vincular a una calificación (opcional)'),
-            const SizedBox(height: 4),
-            Text(
-              'Si esta tarea ES una calificación de la materia (un parcial, un proyecto, etc.), vincúlala aquí. La nota de la tarea se usará como nota de esa calificación.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            GradeItemChipsSelector(
-              subjectId: _subjectId,
-              selectedGradeItemId: _gradeItemId,
-              currentTaskId: widget.existing?.id,
-              onChanged: _onGradeItemChanged,
-            ),
-            if (_gradeItemId != null) ...[
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _notaCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Nota de la calificación (opcional)',
-                  hintText: '0.0 a 5.0',
-                  helperText:
-                      'Deja vacío si aún no tienes la calificación. Puedes editarla después.',
-                ),
-              ),
-            ],
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: _saving ? null : _submit,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    children: [
+                      GrupoIOS(
+                        children: [
+                          _CampoTexto(
+                            controller: _titulo,
+                            hint: 'Título',
+                            autofocus: !widget.isEditing,
+                          ),
+                          _CampoTexto(
+                            controller: _notas,
+                            hint: 'Notas',
+                            lineas: 3,
+                          ),
+                        ],
                       ),
-                    )
-                  : const Icon(Icons.check),
-              label:
-                  Text(widget.isEditing ? 'Guardar cambios' : 'Guardar tarea'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-          ],
+                      const SizedBox(height: 22),
+                      GrupoIOS(
+                        sangriaSeparador: 58,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Column(
+                              children: [
+                                FilaIOS(
+                                  leading: const IconoCuadrado(
+                                    icono: Icons.calendar_today_rounded,
+                                    color: Color(0xFFFF3B30),
+                                  ),
+                                  titulo: 'Fecha',
+                                  subtituloWidget: Text(
+                                    _textoDia(_dia),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: p.acento,
+                                    ),
+                                  ),
+                                ),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(58, 0, 16, 0),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Wrap(
+                                      spacing: 8,
+                                      runSpacing: 6,
+                                      children: [
+                                        _Atajo('Hoy', _dia == hoy,
+                                            () => setState(() => _dia = hoy)),
+                                        _Atajo(
+                                          'Mañana',
+                                          _dia == manana,
+                                          () => setState(() => _dia = manana),
+                                        ),
+                                        _Atajo(
+                                          'Lunes',
+                                          _dia == lunes,
+                                          () => setState(() => _dia = lunes),
+                                        ),
+                                        _Atajo(
+                                          esOtra
+                                              ? DateFormat('d MMM', 'es')
+                                                  .format(_dia)
+                                              : 'Otra…',
+                                          esOtra,
+                                          _otraFecha,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          FilaIOS(
+                            leading: const IconoCuadrado(
+                              icono: Icons.schedule_rounded,
+                              color: Color(0xFF0A84FF),
+                            ),
+                            titulo: 'Hora',
+                            subtituloWidget: _hora == null
+                                ? null
+                                : GestureDetector(
+                                    onTap: _elegirHora,
+                                    child: Text(
+                                      formatearHora(
+                                        context,
+                                        DateTime(2000, 1, 1, _hora!.hour,
+                                            _hora!.minute),
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: p.acento,
+                                      ),
+                                    ),
+                                  ),
+                            trailing: InterruptorIOS(
+                              valor: _hora != null,
+                              onChanged: (v) {
+                                if (v) {
+                                  _elegirHora();
+                                } else {
+                                  setState(() => _hora = null);
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 22),
+                      if (materias.isEmpty)
+                        GrupoIOS(
+                          children: [
+                            FilaIOS(
+                              leading: Icon(
+                                Icons.add_circle_rounded,
+                                color: p.acento,
+                              ),
+                              tituloWidget: Text(
+                                'Crea una materia para continuar',
+                                style:
+                                    TextStyle(fontSize: 17, color: p.acento),
+                              ),
+                              onTap: () => abrirFormulario(
+                                context,
+                                const CrearMateriaScreen(),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        GrupoIOS(
+                          sangriaSeparador: 58,
+                          children: [
+                            FilaIOS(
+                              leading: const IconoCuadrado(
+                                icono: Icons.school_rounded,
+                                color: Color(0xFF5E5CE6),
+                              ),
+                              titulo: 'Materia',
+                              trailing: PopupMenuButton<String>(
+                                initialValue: _materiaId,
+                                onSelected: (id) => setState(() {
+                                  if (id != _materiaId) {
+                                    _materiaId = id;
+                                    _evaluacionId = null;
+                                    _nota.clear();
+                                  }
+                                }),
+                                itemBuilder: (_) => [
+                                  for (final m in materias)
+                                    PopupMenuItem(
+                                      value: m.id,
+                                      child: Row(
+                                        children: [
+                                          PuntoMateria(m.color),
+                                          const SizedBox(width: 8),
+                                          Text(m.nombre),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                                child: _ValorMenu(
+                                  materia?.nombre ?? 'Elegir',
+                                ),
+                              ),
+                            ),
+                            FilaIOS(
+                              leading: const IconoCuadrado(
+                                icono: Icons.flag_rounded,
+                                color: Color(0xFFFF9500),
+                              ),
+                              titulo: 'Prioridad',
+                              trailing: PopupMenuButton<String>(
+                                initialValue: _importancia,
+                                onSelected: _cambiarImportancia,
+                                itemBuilder: (_) => [
+                                  for (final v in const [
+                                    'Alta',
+                                    'Media',
+                                    'Baja',
+                                  ])
+                                    PopupMenuItem(
+                                      value: v,
+                                      child: Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 30,
+                                            child: MarcaPrioridad(
+                                              v,
+                                              tamano: 15,
+                                            ),
+                                          ),
+                                          Text(v),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    MarcaPrioridad(_importancia, tamano: 15),
+                                    const SizedBox(width: 4),
+                                    _ValorMenu(
+                                      _importancia,
+                                      color: AppColors.forImportancia(
+                                        _importancia,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            FilaIOS(
+                              leading: const IconoCuadrado(
+                                icono: Icons.notifications_rounded,
+                                color: Color(0xFFAF52DE),
+                              ),
+                              titulo: 'Recordatorios',
+                              valor: _recordatorios.isEmpty
+                                  ? 'Ninguno'
+                                  : '${_recordatorios.length}',
+                              chevron: true,
+                              onTap: () async {
+                                final nueva = await mostrarHojaRecordatorios(
+                                  context,
+                                  fechaLimite: _fechaLimite,
+                                  actuales: _recordatorios,
+                                );
+                                if (nueva != null) {
+                                  setState(() {
+                                    _recordatorios = nueva;
+                                    _recordatoriosTocados = true;
+                                  });
+                                }
+                              },
+                            ),
+                            _FilaEvaluacion(
+                              materiaId: _materiaId,
+                              evaluacionId: _evaluacionId,
+                              onTap: _elegirEvaluacion,
+                            ),
+                            if (_evaluacionId != null)
+                              FilaIOS(
+                                titulo: 'Nota obtenida',
+                                trailing: SizedBox(
+                                  width: 100,
+                                  child: TextField(
+                                    controller: _nota,
+                                    textAlign: TextAlign.right,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      color: p.texto,
+                                    ),
+                                    decoration: InputDecoration(
+                                      hintText: '0.0 – 5.0',
+                                      hintStyle: TextStyle(color: p.texto2),
+                                      filled: false,
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      contentPadding: EdgeInsets.zero,
+                                      isDense: true,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (_evaluacionId != null)
+                        const PieGrupo(
+                          'Déjala vacía si aún no tienes la nota. No cuenta en '
+                          'el promedio hasta que la pongas.',
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _textoDia(DateTime d) {
+    final s = DateFormat("EEEE d 'de' MMMM", 'es').format(d);
+    return s[0].toUpperCase() + s.substring(1);
+  }
+}
+
+/// Campo de texto sin borde dentro de un grupo.
+class _CampoTexto extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final int lineas;
+  final bool autofocus;
+
+  const _CampoTexto({
+    required this.controller,
+    required this.hint,
+    this.lineas = 1,
+    this.autofocus = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: TextField(
+        controller: controller,
+        autofocus: autofocus,
+        minLines: lineas,
+        maxLines: lineas == 1 ? 1 : 6,
+        textCapitalization: TextCapitalization.sentences,
+        style: TextStyle(fontSize: 17, color: p.texto),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: p.texto2),
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
         ),
       ),
     );
   }
 }
 
-class _Label extends StatelessWidget {
-  final String text;
-  // ignore: unused_element_parameter
-  const _Label(this.text);
+class _Atajo extends StatelessWidget {
+  final String texto;
+  final bool activo;
+  final VoidCallback onTap;
+  const _Atajo(this.texto, this.activo, this.onTap);
+
   @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-      );
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: activo ? AppColors.primary : p.grupo2,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          texto,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: activo ? Colors.white : p.texto,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-/// Card compacta que aparece en el formulario para indicar cuántos
-/// recordatorios están configurados y abrir la pantalla de selección.
-/// Sigue el mismo patrón que el card del detalle de tarea.
-class _RecordatoriosCardCompact extends StatelessWidget {
-  final int count;
+/// Valor de una fila con menú (texto gris + flechas ⇅).
+class _ValorMenu extends StatelessWidget {
+  final String texto;
+  final Color? color;
+  const _ValorMenu(this.texto, {this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(
+            texto,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 17, color: color ?? p.texto2),
+          ),
+        ),
+        Icon(Icons.unfold_more_rounded, size: 18, color: p.texto2),
+      ],
+    );
+  }
+}
+
+/// Fila «Evaluación» con el nombre de la evaluación vinculada.
+class _FilaEvaluacion extends StatelessWidget {
+  final String? materiaId;
+  final String? evaluacionId;
   final VoidCallback onTap;
-  const _RecordatoriosCardCompact({
-    required this.count,
+
+  const _FilaEvaluacion({
+    required this.materiaId,
+    required this.evaluacionId,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final subtitle = count == 0
-        ? 'Ninguno configurado'
-        : '$count ${count == 1 ? "configurado" : "configurados"}';
-
-    return Card(
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+    const icono = IconoCuadrado(
+      icono: Icons.link_rounded,
+      color: Color(0xFF8E8E93),
+    );
+    if (materiaId == null || evaluacionId == null) {
+      return FilaIOS(
+        leading: icono,
+        titulo: 'Evaluación',
+        valor: 'Ninguna',
+        chevron: true,
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.notifications_active_outlined,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Toca para configurar antes del vencimiento',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
-        ),
-      ),
+      );
+    }
+    return StreamBuilder<List<GradeItem>>(
+      stream: FirestoreService.instance.watchGradeItemsBySubject(materiaId!),
+      builder: (context, snap) {
+        var nombre = '…';
+        for (final g in snap.data ?? const <GradeItem>[]) {
+          if (g.id == evaluacionId) nombre = g.nombre;
+        }
+        return FilaIOS(
+          leading: icono,
+          titulo: 'Evaluación',
+          valor: nombre,
+          chevron: true,
+          onTap: onTap,
+        );
+      },
     );
   }
 }

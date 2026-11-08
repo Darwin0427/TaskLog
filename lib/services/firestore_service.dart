@@ -76,6 +76,20 @@ class FirestoreService {
     }
   }
 
+  /// Lanza una escritura sin esperar a que llegue al servidor.
+  ///
+  /// Firestore aplica el cambio al instante en el caché del teléfono (la
+  /// pantalla se actualiza enseguida) y lo sube cuando hay conexión. Si
+  /// se esperara al servidor, sin internet la app quedaría "guardando…"
+  /// para siempre.
+  void _enSegundoPlano(Future<Object?> escritura) {
+    unawaited(
+      escritura.then<void>((_) {}, onError: (Object e) {
+        debugPrint('[Firestore] escritura en segundo plano falló: $e');
+      }),
+    );
+  }
+
   /// Borra todos los documentos del usuario (se usa al eliminar la
   /// cuenta). Va por lotes de 400 porque Firestore acepta máximo 500
   /// operaciones por lote.
@@ -102,7 +116,7 @@ class FirestoreService {
   }
 
   Future<void> addSubject(Subject subject) async {
-    await _col('subjects').add(subject.toMap());
+    _enSegundoPlano(_col('subjects').add(subject.toMap()));
   }
 
   Future<void> updateSubject(String id, Subject subject) async {
@@ -125,11 +139,21 @@ class FirestoreService {
         (subject.classLinkUrl != null && subject.classLinkUrl!.isNotEmpty)
             ? subject.classLinkUrl
             : FieldValue.delete();
-    await _col('subjects').doc(id).update(data);
+    data['horario'] = (subject.horario != null && subject.horario!.isNotEmpty)
+        ? subject.horario
+        : FieldValue.delete();
+    _enSegundoPlano(_col('subjects').doc(id).update(data));
+  }
+
+  /// Guarda la meta de nota final de una materia (ej. 3.5). Null la borra.
+  Future<void> setSubjectMeta(String id, double? meta) async {
+    _enSegundoPlano(_col('subjects').doc(id).update(<String, dynamic>{
+      'meta': meta ?? FieldValue.delete(),
+    }));
   }
 
   Future<void> deleteSubject(String id) async {
-    await _col('subjects').doc(id).delete();
+    _enSegundoPlano(_col('subjects').doc(id).delete());
   }
 
   /// Cuenta cuántos documentos hijos (tareas, notas, gradeItems) están
@@ -180,7 +204,20 @@ class FirestoreService {
     final snap = await _col('tasks')
         .where('gradeItemId', isEqualTo: gradeItemId)
         .get();
-    if (snap.docs.isEmpty) return;
+    if (snap.docs.isEmpty) {
+      // Ya no hay tareas vinculadas: la nota venía de la tarea, así que la
+      // evaluación vuelve a quedar sin nota (antes se quedaba con la nota
+      // vieja y contaba en el promedio).
+      try {
+        await _col('gradeItems').doc(gradeItemId).update(<String, dynamic>{
+          'nota': null,
+        });
+      } on FirebaseException catch (e) {
+        // La evaluación pudo haberse borrado; no es un error.
+        if (e.code != 'not-found') rethrow;
+      }
+      return;
+    }
 
     // Tomamos la nota de la primera tarea vinculada (debería ser la única).
     final task = TaskItem.fromDoc(snap.docs.first);
@@ -203,22 +240,34 @@ class FirestoreService {
     });
   }
 
-  Future<void> addTask(TaskItem task) async {
-    await _col('tasks').add(task.toMap());
-    // Si la tarea aporta a un grade item, recalcular la nota agregada.
-    if (task.gradeItemId != null) {
-      await _recalcGradeItemNota(task.gradeItemId!);
-    }
-    // Reprogramar recordatorios (incluye los de la tarea nueva). Sin
-    // `await` para no demorar el cierre del formulario.
+  /// Crea la tarea y devuelve su ID.
+  ///
+  /// No espera la confirmación del servidor: Firestore guarda primero en
+  /// el teléfono y sincroniza después. Así el formulario se cierra al
+  /// instante aunque no haya internet (antes se quedaba esperando).
+  Future<String> addTask(TaskItem task) async {
+    final ref = _col('tasks').doc();
+    final escritura = ref.set(task.toMap());
     unawaited(sincronizarRecordatorios());
+    unawaited(_despuesDeEscribir(escritura, {task.gradeItemId}));
+    return ref.id;
   }
 
   Future<void> updateTask(String id, TaskItem task) async {
-    // Saber el gradeItemId anterior por si cambió la asociación,
-    // para recalcular tanto el viejo como el nuevo.
-    final prevDoc = await _col('tasks').doc(id).get();
-    final prevGradeItemId = prevDoc.data()?['gradeItemId'] as String?;
+    final ref = _col('tasks').doc(id);
+    // Saber el gradeItemId anterior por si cambió la asociación, para
+    // recalcular tanto el viejo como el nuevo. Primero del caché (rápido
+    // y sin red); si no está, del servidor.
+    String? prevGradeItemId;
+    try {
+      final prev = await ref.get(const GetOptions(source: Source.cache));
+      prevGradeItemId = prev.data()?['gradeItemId'] as String?;
+    } catch (_) {
+      try {
+        final prev = await ref.get();
+        prevGradeItemId = prev.data()?['gradeItemId'] as String?;
+      } catch (_) {}
+    }
 
     final data = <String, dynamic>{
       'titulo': task.titulo,
@@ -230,35 +279,50 @@ class FirestoreService {
     };
     // Campos opcionales del vínculo a un grade item: si están en null,
     // los borramos del documento.
-    data['gradeItemId'] =
-        task.gradeItemId ?? FieldValue.delete();
-    data['pesoEnGradeItem'] =
-        task.pesoEnGradeItem ?? FieldValue.delete();
+    data['gradeItemId'] = task.gradeItemId ?? FieldValue.delete();
+    data['pesoEnGradeItem'] = task.pesoEnGradeItem ?? FieldValue.delete();
     data['nota'] = task.nota ?? FieldValue.delete();
-    await _col('tasks').doc(id).update(data);
-
-    // Recalcular ambos grade items afectados (el anterior y el nuevo,
-    // si difieren).
-    final affected = <String>{};
-    if (prevGradeItemId != null) affected.add(prevGradeItemId);
-    if (task.gradeItemId != null) affected.add(task.gradeItemId!);
-    for (final gid in affected) {
-      await _recalcGradeItemNota(gid);
-    }
+    final escritura = ref.update(data);
 
     // Reprogramar recordatorios: si cambió la fecha límite o la lista de
     // recordatorios, se ajusta automáticamente.
     unawaited(sincronizarRecordatorios());
+    unawaited(
+      _despuesDeEscribir(escritura, {prevGradeItemId, task.gradeItemId}),
+    );
+  }
+
+  /// Espera a que una escritura llegue al servidor y luego recalcula las
+  /// notas de las evaluaciones afectadas. Corre en segundo plano.
+  Future<void> _despuesDeEscribir(
+    Future<void> escritura,
+    Set<String?> evaluaciones,
+  ) async {
+    try {
+      await escritura;
+      for (final gid in evaluaciones.whereType<String>()) {
+        await _recalcGradeItemNota(gid);
+      }
+    } catch (e) {
+      debugPrint('[Firestore] escritura en segundo plano falló: $e');
+    }
   }
 
   /// Marca una tarea como completada o pendiente. Si `completada == true`
   /// también registra el timestamp en `completadaEn`.
   Future<void> setTaskCompletada(String id, bool completada) async {
-    await _col('tasks').doc(id).update(<String, dynamic>{
-      'completada': completada,
-      'completadaEn':
-          completada ? FieldValue.serverTimestamp() : FieldValue.delete(),
-    });
+    // Sin esperar al servidor: el cambio se ve al instante también sin red.
+    unawaited(
+      _col('tasks')
+          .doc(id)
+          .update(<String, dynamic>{
+            'completada': completada,
+            'completadaEn': completada
+                ? FieldValue.serverTimestamp()
+                : FieldValue.delete(),
+          })
+          .catchError((Object e) => debugPrint('[Firestore] completar: $e')),
+    );
 
     // Completada → sus recordatorios salen de la selección.
     // Reactivada → vuelven los que aún no hayan disparado.
@@ -344,8 +408,13 @@ class FirestoreService {
     });
   }
 
-  Future<void> addNote(Note note) async {
-    await _col('notes').add(note.toMap());
+  /// Crea el apunte y devuelve su ID (el editor sigue guardando sobre él).
+  Future<String> addNote(Note note) async {
+    final ref = _col('notes').doc();
+    // `set` sobre un ID generado en el teléfono: no espera al servidor para
+    // conocer el ID, así que funciona igual sin conexión.
+    unawaited(ref.set(note.toMap()));
+    return ref.id;
   }
 
   Future<void> updateNote(String id, Note note) async {
@@ -360,11 +429,11 @@ class FirestoreService {
     } else {
       data['taskId'] = FieldValue.delete();
     }
-    await _col('notes').doc(id).update(data);
+    _enSegundoPlano(_col('notes').doc(id).update(data));
   }
 
   Future<void> deleteNote(String id) async {
-    await _col('notes').doc(id).delete();
+    _enSegundoPlano(_col('notes').doc(id).delete());
   }
 
   Future<Note?> getNote(String id) async {
@@ -411,23 +480,29 @@ class FirestoreService {
     return snap.docs.map(GradeItem.fromDoc).toList();
   }
 
-  Future<void> addGradeItem(GradeItem item) async {
-    await _col('gradeItems').add(item.toMap());
+  /// Crea la evaluación y devuelve su ID (para vincularle una tarea).
+  Future<String> addGradeItem(GradeItem item) async {
+    final ref = _col('gradeItems').doc();
+    _enSegundoPlano(ref.set(item.toMap()));
+    return ref.id;
   }
 
   Future<void> updateGradeItem(String id, GradeItem item) async {
-    await _col('gradeItems').doc(id).update(<String, dynamic>{
+    _enSegundoPlano(_col('gradeItems').doc(id).update(<String, dynamic>{
       'nombre': item.nombre,
       'porcentaje': item.porcentaje,
       'nota': item.nota,
-    });
+      'fecha': item.fecha == null
+          ? FieldValue.delete()
+          : Timestamp.fromDate(item.fecha!),
+    }));
   }
 
   /// Atajo para actualizar solo la nota (caso más común tras una evaluación).
   Future<void> setGradeItemNota(String id, double? nota) async {
-    await _col('gradeItems').doc(id).update(<String, dynamic>{
+    _enSegundoPlano(_col('gradeItems').doc(id).update(<String, dynamic>{
       'nota': nota,
-    });
+    }));
   }
 
   Future<void> deleteGradeItem(String id) async {

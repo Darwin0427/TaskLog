@@ -4,11 +4,13 @@ import '../../models/subject.dart';
 import '../../services/firestore_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/error_messages.dart';
+import '../../widgets/ios_ui.dart';
 
+/// Nueva / editar materia, como hoja: arriba una vista previa grande que
+/// cambia en vivo (ícono y nombre en el color elegido), debajo los 12
+/// colores y 12 íconos, y al final los datos opcionales en filas.
 class CrearMateriaScreen extends StatefulWidget {
-  /// Si se pasa, edita una materia existente. Si es null, crea una nueva.
   final Subject? existing;
-
   const CrearMateriaScreen({super.key, this.existing});
 
   bool get isEditing => existing != null;
@@ -18,241 +20,220 @@ class CrearMateriaScreen extends StatefulWidget {
 }
 
 class _CrearMateriaScreenState extends State<CrearMateriaScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nombreCtrl;
-  late final TextEditingController _profesorCtrl;
-  late final TextEditingController _aulaCtrl;
-  late final TextEditingController _linkCtrl;
+  late final TextEditingController _nombre;
+  late final TextEditingController _profesor;
+  late final TextEditingController _aula;
+  late final TextEditingController _link;
+  late final TextEditingController _horario;
   late Color _color;
-  late String _iconName;
-  bool _saving = false;
+  late String _icono;
+  bool _guardando = false;
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
-    _nombreCtrl = TextEditingController(text: e?.nombre ?? '');
-    _profesorCtrl = TextEditingController(text: e?.profesor ?? '');
-    _aulaCtrl = TextEditingController(text: e?.aula ?? '');
-    _linkCtrl = TextEditingController(text: e?.classLinkUrl ?? '');
-    _color = e?.color ?? AppColors.subjectPalette.first;
-    _iconName = e?.iconName ?? 'book';
+    _nombre = TextEditingController(text: e?.nombre ?? '');
+    _profesor = TextEditingController(text: e?.profesor ?? '');
+    _aula = TextEditingController(text: e?.aula ?? '');
+    _link = TextEditingController(text: e?.classLinkUrl ?? '');
+    _horario = TextEditingController(text: e?.horario ?? '');
+    _color = e?.color ?? AppColors.subjectPalette[6];
+    _icono = e?.iconName ?? AppIcons.all.keys.first;
+    _nombre.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
-    _nombreCtrl.dispose();
-    _profesorCtrl.dispose();
-    _aulaCtrl.dispose();
-    _linkCtrl.dispose();
+    _nombre.dispose();
+    _profesor.dispose();
+    _aula.dispose();
+    _link.dispose();
+    _horario.dispose();
     super.dispose();
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+  String? _opcional(TextEditingController c) =>
+      c.text.trim().isEmpty ? null : c.text.trim();
+
+  Future<void> _guardar() async {
+    if (_nombre.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe el nombre de la materia.')),
+      );
+      return;
+    }
+    setState(() => _guardando = true);
     try {
-      final subject = Subject(
+      final materia = Subject(
         id: widget.existing?.id ?? '',
-        nombre: _nombreCtrl.text.trim(),
+        nombre: _nombre.text.trim(),
         colorHex: AppColors.toHex(_color),
-        iconName: _iconName,
-        profesor: _profesorCtrl.text.trim().isEmpty
-            ? null
-            : _profesorCtrl.text.trim(),
-        aula: _aulaCtrl.text.trim().isEmpty ? null : _aulaCtrl.text.trim(),
-        classLinkUrl:
-            _linkCtrl.text.trim().isEmpty ? null : _linkCtrl.text.trim(),
+        iconName: _icono,
+        profesor: _opcional(_profesor),
+        aula: _opcional(_aula),
+        classLinkUrl: _opcional(_link),
+        horario: _opcional(_horario),
+        meta: widget.existing?.meta,
       );
       if (widget.isEditing) {
         await FirestoreService.instance
-            .updateSubject(widget.existing!.id, subject);
+            .updateSubject(widget.existing!.id, materia);
       } else {
-        await FirestoreService.instance.addSubject(subject);
+        await FirestoreService.instance.addSubject(materia);
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e);
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _guardando = false);
+        showErrorSnackBar(context, e);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    final nombre = _nombre.text.trim();
+    final icono = AppIcons.byName(_icono);
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Editar materia' : 'Nueva materia'),
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: Column(
           children: [
-            // Preview
-            Card(
-              color: _color.withValues(alpha: 0.12),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: _color.withValues(alpha: 0.22),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        AppIcons.byName(_iconName),
-                        color: _color,
-                        size: 28,
-                      ),
+            EncabezadoHoja(
+              titulo: widget.isEditing ? 'Editar materia' : 'Nueva materia',
+              onConfirmar: _guardar,
+              guardando: _guardando,
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  // Vista previa + nombre.
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                    decoration: BoxDecoration(
+                      color: p.grupo,
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        _nombreCtrl.text.trim().isEmpty
-                            ? 'Vista previa'
-                            : _nombreCtrl.text.trim(),
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 18,
-                          color: _color,
+                    child: Column(
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            color: _color,
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _color.withValues(alpha: 0.4),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Icon(icono, color: Colors.white, size: 40),
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _nombreCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nombre *',
-                hintText: 'Ej. Cálculo, Programación...',
-              ),
-              onChanged: (_) => setState(() {}),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-            ),
-            const SizedBox(height: 24),
-            _Label('Color'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: AppColors.subjectPalette.map((c) {
-                final selected = c.toARGB32() == _color.toARGB32();
-                return GestureDetector(
-                  onTap: () => setState(() => _color = c),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: c,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selected
-                            ? Theme.of(context).colorScheme.onSurface
-                            : Colors.transparent,
-                        width: 3,
-                      ),
-                    ),
-                    child: selected
-                        ? const Icon(Icons.check, color: Colors.white)
-                        : null,
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-            _Label('Ícono'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: AppIcons.all.entries.map((e) {
-                final selected = e.key == _iconName;
-                return GestureDetector(
-                  onTap: () => setState(() => _iconName = e.key),
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? _color.withValues(alpha: 0.2)
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected ? _color : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: Icon(
-                      e.value,
-                      color: selected
-                          ? _color
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      size: 28,
+                        const SizedBox(height: 14),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: p.grupo2,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TextField(
+                            controller: _nombre,
+                            autofocus: !widget.isEditing,
+                            textAlign: TextAlign.center,
+                            textCapitalization: TextCapitalization.sentences,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                              color: nombre.isEmpty ? p.texto : _color,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Nombre de la materia',
+                              hintStyle: TextStyle(
+                                color: p.texto2,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-            _Label('Información adicional (opcional)'),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _profesorCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Profesor',
-                hintText: 'Nombre del docente',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _aulaCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Aula / salón',
-                hintText: 'Ej. Bloque 4 - 203',
-                prefixIcon: Icon(Icons.meeting_room_outlined),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _linkCtrl,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'Link de clase virtual',
-                hintText: 'https://meet.google.com/...',
-                prefixIcon: Icon(Icons.videocam_outlined),
-              ),
-            ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: _saving ? null : _submit,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+                  const SizedBox(height: 18),
+                  // Colores.
+                  _Cuadricula(
+                    children: [
+                      for (final c in AppColors.subjectPalette)
+                        _Circulo(
+                          seleccionado: c.toARGB32() == _color.toARGB32(),
+                          onTap: () => setState(() => _color = c),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: c,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  // Íconos.
+                  _Cuadricula(
+                    children: [
+                      for (final e in AppIcons.all.entries)
+                        _Circulo(
+                          seleccionado: e.key == _icono,
+                          onTap: () => setState(() => _icono = e.key),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: p.grupo2,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(e.value, size: 20, color: p.texto),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const EtiquetaGrupo('Información adicional'),
+                  GrupoIOS(
+                    children: [
+                      _FilaCampo(
+                        etiqueta: 'Profesor',
+                        controller: _profesor,
+                        hint: 'Nombre',
                       ),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(
-                widget.isEditing ? 'Guardar cambios' : 'Crear materia',
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: _color,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                      _FilaCampo(
+                        etiqueta: 'Aula',
+                        controller: _aula,
+                        hint: 'Ej. 118',
+                      ),
+                      _FilaCampo(
+                        etiqueta: 'Clase virtual',
+                        controller: _link,
+                        hint: 'Enlace',
+                        teclado: TextInputType.url,
+                      ),
+                      _FilaCampo(
+                        etiqueta: 'Horario',
+                        controller: _horario,
+                        hint: 'Ej. Lun y Mié 6–8 p. m.',
+                      ),
+                    ],
+                  ),
+                  const PieGrupo('Todo esto es opcional.'),
+                ],
               ),
             ),
           ],
@@ -262,15 +243,114 @@ class _CrearMateriaScreenState extends State<CrearMateriaScreen> {
   }
 }
 
-class _Label extends StatelessWidget {
-  final String text;
-  // ignore: unused_element_parameter
-  const _Label(this.text);
+/// Seis por fila, dentro de un grupo.
+class _Cuadricula extends StatelessWidget {
+  final List<Widget> children;
+  const _Cuadricula({required this.children});
+
   @override
-  Widget build(BuildContext context) => Text(
-        text,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: p.grupo,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: GridView.count(
+        crossAxisCount: 6,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _Circulo extends StatelessWidget {
+  final bool seleccionado;
+  final VoidCallback onTap;
+  final Widget child;
+
+  const _Circulo({
+    required this.seleccionado,
+    required this.onTap,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: seleccionado ? p.texto2 : Colors.transparent,
+            width: 2.5,
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Fila «Etiqueta ......... valor» con el campo de texto a la derecha.
+class _FilaCampo extends StatelessWidget {
+  final String etiqueta;
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType teclado;
+
+  const _FilaCampo({
+    required this.etiqueta,
+    required this.controller,
+    required this.hint,
+    this.teclado = TextInputType.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              etiqueta,
+              style: TextStyle(fontSize: 17, color: p.texto),
             ),
-      );
+          ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: teclado,
+              textAlign: TextAlign.right,
+              textCapitalization: teclado == TextInputType.url
+                  ? TextCapitalization.none
+                  : TextCapitalization.words,
+              autocorrect: teclado != TextInputType.url,
+              style: TextStyle(fontSize: 17, color: p.texto),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: TextStyle(color: p.texto2),
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

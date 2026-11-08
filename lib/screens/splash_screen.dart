@@ -1,64 +1,45 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 
-/// Pantalla mostrada mientras Firebase / locales se inicializan,
-/// o como fallback durante operaciones de carga al arranque.
+import '../theme/app_theme.dart';
+import '../widgets/logo_tasklog.dart';
+
+/// Arranque: solo el ícono y el nombre, como recomienda Apple. Si algo
+/// falla al iniciar, muestra el mensaje debajo.
 class SplashScreen extends StatelessWidget {
   final String? message;
   const SplashScreen({super.key, this.message});
 
   @override
   Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    final esError = message != null && message != 'Cargando...';
     return Scaffold(
-      backgroundColor: AppColors.primary,
-      body: SafeArea(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 96,
-                height: 96,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Icon(
-                  Icons.task_alt,
-                  color: Colors.white,
-                  size: 56,
-                ),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const LogoTaskLog(tamano: 96),
+            const SizedBox(height: 16),
+            Text(
+              'TaskLog',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: p.texto,
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'Gestor de tareas',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 40),
-              const SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.6,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              if (message != null) ...[
-                const SizedBox(height: 16),
-                Text(
+            ),
+            if (esError) ...[
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
                   message!,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 14,
-                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14, color: p.texto2),
                 ),
-              ],
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );

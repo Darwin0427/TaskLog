@@ -13,14 +13,20 @@ class AppColors {
   static const Color mediumPriority = Color(0xFFFF9F0A);
   static const Color lowPriority = Color(0xFF30D158);
 
-  // Paleta para materias
+  // Paleta para materias: los 12 colores del sistema de iOS.
   static const List<Color> subjectPalette = <Color>[
-    Color(0xFF534AB7), // morado
-    Color(0xFF3B6D11), // verde
-    Color(0xFFE24B4A), // coral / rojo
-    Color(0xFFD9387B), // rosa
-    Color(0xFF1E6FB8), // azul
-    Color(0xFFBA7517), // ámbar
+    Color(0xFFFF3B30), // rojo
+    Color(0xFFFF9500), // naranja
+    Color(0xFFFFCC00), // amarillo
+    Color(0xFF34C759), // verde
+    Color(0xFF5AC8FA), // celeste
+    Color(0xFF007AFF), // azul
+    Color(0xFF5856D6), // índigo
+    Color(0xFFAF52DE), // morado
+    Color(0xFFFF2D55), // rosa
+    Color(0xFFA2845E), // café
+    Color(0xFF30B0C7), // turquesa
+    Color(0xFF8E8E93), // gris
   ];
 
   static Color forImportancia(String importancia) {
@@ -57,17 +63,31 @@ class AppColors {
 class AppIcons {
   AppIcons._();
 
+  /// Íconos que se ofrecen al crear una materia (en este orden).
   static const Map<String, IconData> all = <String, IconData>{
-    'code': Icons.code,
-    'book': Icons.menu_book,
-    'calendar': Icons.calendar_month,
-    'database': Icons.storage,
-    'map': Icons.map,
-    'language': Icons.language,
+    'functions': Icons.functions_rounded,
+    'database': Icons.storage_rounded,
+    'language': Icons.translate_rounded,
+    'phone': Icons.smartphone_rounded,
+    'science': Icons.science_rounded,
+    'code': Icons.code_rounded,
+    'calculate': Icons.calculate_rounded,
+    'book': Icons.menu_book_rounded,
+    'palette': Icons.palette_rounded,
+    'public': Icons.public_rounded,
+    'music': Icons.music_note_rounded,
+    'sports': Icons.sports_soccer_rounded,
   };
 
+  /// Nombres de versiones anteriores (siguen funcionando).
+  static const Map<String, IconData> _antiguos = <String, IconData>{
+    'calendar': Icons.calendar_month_rounded,
+    'map': Icons.map_rounded,
+  };
+
+
   static IconData byName(String name) =>
-      all[name] ?? Icons.school_outlined;
+      all[name] ?? _antiguos[name] ?? Icons.school_rounded;
 }
 
 /// Colores base estilo iOS para cada modo.

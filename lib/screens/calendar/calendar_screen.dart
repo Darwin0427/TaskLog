@@ -20,6 +20,11 @@ enum _VistaCalendario { mes, semana, dia }
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
+  /// Día elegido en el calendario. El botón «+» lo usa para crear la
+  /// tarea en ese día.
+  static final ValueNotifier<DateTime> diaElegido =
+      ValueNotifier<DateTime>(soloDia(DateTime.now()));
+
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
@@ -27,7 +32,13 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   _VistaCalendario _vista = _VistaCalendario.mes;
   DateTime _enfocado = soloDia(DateTime.now());
-  DateTime _elegido = soloDia(DateTime.now());
+  DateTime _elegidoDia = soloDia(DateTime.now());
+
+  DateTime get _elegido => _elegidoDia;
+  set _elegido(DateTime d) {
+    _elegidoDia = d;
+    CalendarScreen.diaElegido.value = d;
+  }
   FiltrosTareas _filtros = FiltrosTareas.ninguno;
 
   void _irAHoy() {

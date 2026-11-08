@@ -10,6 +10,14 @@ class Subject {
   final String? profesor;
   final String? aula;
   final String? classLinkUrl;
+
+  /// Horario de clase en texto libre (ej. «Lun y Mié 6–8 p. m.»).
+  final String? horario;
+
+  /// Nota final que el estudiante quiere sacar (ej. 3.5), para «Nota
+  /// necesaria».
+  final double? meta;
+
   final DateTime? creadoEn;
 
   Subject({
@@ -20,6 +28,8 @@ class Subject {
     this.profesor,
     this.aula,
     this.classLinkUrl,
+    this.horario,
+    this.meta,
     this.creadoEn,
   });
 
@@ -41,6 +51,8 @@ class Subject {
       profesor: data['profesor'] as String?,
       aula: data['aula'] as String?,
       classLinkUrl: data['classLinkUrl'] as String?,
+      horario: data['horario'] as String?,
+      meta: (data['meta'] as num?)?.toDouble(),
       creadoEn: (data['creadoEn'] as Timestamp?)?.toDate(),
     );
   }
@@ -53,6 +65,8 @@ class Subject {
         if (aula != null && aula!.isNotEmpty) 'aula': aula,
         if (classLinkUrl != null && classLinkUrl!.isNotEmpty)
           'classLinkUrl': classLinkUrl,
+        if (horario != null && horario!.isNotEmpty) 'horario': horario,
+        if (meta != null) 'meta': meta,
         'creadoEn': FieldValue.serverTimestamp(),
       };
 }

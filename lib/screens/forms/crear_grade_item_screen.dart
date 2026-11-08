@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../models/grade_item.dart';
 import '../../models/subject.dart';
+import '../../models/task_item.dart';
 import '../../services/firestore_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/error_messages.dart';
+import '../../widgets/ios_ui.dart';
+import '../../widgets/selectores_ios.dart';
+import 'crear_tarea_screen.dart';
 
+/// Nueva / editar evaluación de una materia, como hoja: nombre, peso con
+/// deslizador (avisa en vivo si la materia pasa del 100 %), nota opcional,
+/// fecha y «Crear también la tarea» para no repetir el formulario.
 class CrearGradeItemScreen extends StatefulWidget {
   final Subject subject;
-
-  /// Si se pasa, edita un grade item existente. Si es null, crea uno nuevo.
   final GradeItem? existing;
 
   const CrearGradeItemScreen({
@@ -24,284 +31,381 @@ class CrearGradeItemScreen extends StatefulWidget {
 }
 
 class _CrearGradeItemScreenState extends State<CrearGradeItemScreen> {
-  final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nombreCtrl;
-  late final TextEditingController _porcentajeCtrl;
-  late final TextEditingController _notaCtrl;
+  late final TextEditingController _nombre;
+  late final TextEditingController _nota;
+  late double _peso;
+  DateTime? _fecha;
+  bool _crearTarea = false;
 
-  /// Porcentaje ya consumido por OTROS items (excluyendo el actual si estamos
-  /// editando).
-  double _usadoExcluyendoActual = 0;
-  bool _loadingUsado = true;
-  bool _saving = false;
+  /// Porcentaje que ya ocupan las OTRAS evaluaciones de la materia.
+  double _usado = 0;
+  List<TaskItem> _vinculadas = const <TaskItem>[];
+  bool _guardando = false;
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
-    _nombreCtrl = TextEditingController(text: e?.nombre ?? '');
-    _porcentajeCtrl = TextEditingController(
-      text: e == null ? '' : e.porcentaje.toStringAsFixed(0),
-    );
-    _notaCtrl = TextEditingController(
-      text: e?.nota == null ? '' : e!.nota!.toStringAsFixed(1),
-    );
-    _porcentajeCtrl.addListener(() => setState(() {}));
-    _cargarPorcentajeUsado();
+    _nombre = TextEditingController(text: e?.nombre ?? '');
+    _nota = TextEditingController(text: e?.nota?.toStringAsFixed(1) ?? '');
+    _peso = e?.porcentaje ?? 20;
+    _fecha = e?.fecha;
+    _cargar();
+  }
+
+  Future<void> _cargar() async {
+    try {
+      final items = await FirestoreService.instance
+          .getGradeItemsBySubject(widget.subject.id);
+      var suma = 0.0;
+      for (final it in items) {
+        if (it.id == widget.existing?.id) continue;
+        suma += it.porcentaje;
+      }
+      List<TaskItem> vinculadas = const <TaskItem>[];
+      if (widget.existing != null) {
+        vinculadas = await FirestoreService.instance
+            .watchTasksByGradeItem(widget.existing!.id)
+            .first;
+      }
+      if (!mounted) return;
+      setState(() {
+        _usado = suma;
+        _vinculadas = vinculadas;
+        // Una evaluación nueva arranca con lo que queda disponible (si
+        // queda menos del 20 %).
+        if (widget.existing == null) {
+          final libre = (100 - suma).clamp(0, 100).toDouble();
+          if (libre > 0 && libre < _peso) _peso = libre.roundToDouble();
+        }
+      });
+    } catch (_) {}
   }
 
   @override
   void dispose() {
-    _nombreCtrl.dispose();
-    _porcentajeCtrl.dispose();
-    _notaCtrl.dispose();
+    _nombre.dispose();
+    _nota.dispose();
     super.dispose();
   }
 
-  Future<void> _cargarPorcentajeUsado() async {
-    try {
-      final items = await FirestoreService.instance
-          .getGradeItemsBySubject(widget.subject.id);
-      double suma = 0;
-      for (final it in items) {
-        // En modo editar, excluimos el item actual del cálculo del disponible.
-        if (widget.isEditing && it.id == widget.existing!.id) continue;
-        suma += it.porcentaje;
-      }
-      if (mounted) {
-        setState(() {
-          _usadoExcluyendoActual = suma;
-          _loadingUsado = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loadingUsado = false);
-    }
-  }
+  double get _total => _usado + _peso;
+  bool get _seVincula => _vinculadas.isNotEmpty;
 
-  double get _porcentajeIngresado {
-    final s = _porcentajeCtrl.text.replaceAll(',', '.');
-    return double.tryParse(s) ?? 0;
-  }
-
-  double get _disponible =>
-      (100 - _usadoExcluyendoActual).clamp(0, 100).toDouble();
-
-  double get _restanteTrasGuardar => _disponible - _porcentajeIngresado;
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    final p = _porcentajeIngresado;
-    if (p <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El porcentaje debe ser mayor a 0')),
-      );
+  Future<void> _guardar() async {
+    final nombre = _nombre.text.trim();
+    if (nombre.isEmpty) {
+      _aviso('Escribe el nombre de la evaluación.');
       return;
     }
-    if (_usadoExcluyendoActual + p > 100.0001) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'El total superaría el 100%. Disponible: ${_disponible.toStringAsFixed(1)}%',
-          ),
-        ),
-      );
+    if (_peso <= 0) {
+      _aviso('El peso debe ser mayor a 0 %.');
       return;
     }
-
+    if (_total > 100.0001) {
+      _aviso('La materia pasaría del 100 %. Baja el peso.');
+      return;
+    }
     double? nota;
-    if (_notaCtrl.text.trim().isNotEmpty) {
-      nota = double.tryParse(_notaCtrl.text.replaceAll(',', '.'));
-      if (nota == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('La nota no es un número válido')),
-        );
-        return;
-      }
-      if (nota < 0 || nota > 5) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('La nota debe estar entre 0 y 5')),
-        );
+    if (!_seVincula && _nota.text.trim().isNotEmpty) {
+      nota = double.tryParse(_nota.text.replaceAll(',', '.').trim());
+      if (nota == null || nota < 0 || nota > 5) {
+        _aviso('La nota debe estar entre 0.0 y 5.0.');
         return;
       }
     }
-
-    setState(() => _saving = true);
+    if (_crearTarea && _fecha == null) {
+      _aviso('Elige la fecha para crear la tarea.');
+      return;
+    }
+    setState(() => _guardando = true);
     try {
       final item = GradeItem(
         id: widget.existing?.id ?? '',
         subjectId: widget.subject.id,
-        nombre: _nombreCtrl.text.trim(),
-        porcentaje: p,
-        nota: nota,
+        nombre: nombre,
+        porcentaje: _peso,
+        nota: _seVincula ? widget.existing?.nota : nota,
+        fecha: _fecha,
       );
       if (widget.isEditing) {
         await FirestoreService.instance
             .updateGradeItem(widget.existing!.id, item);
       } else {
-        await FirestoreService.instance.addGradeItem(item);
+        final id = await FirestoreService.instance.addGradeItem(item);
+        if (_crearTarea) {
+          await FirestoreService.instance.addTask(
+            TaskItem(
+              id: '',
+              titulo: nombre,
+              descripcion: '',
+              subjectId: widget.subject.id,
+              importancia: _peso >= 25 ? 'Alta' : 'Media',
+              fechaLimite: _fecha!,
+              gradeItemId: id,
+              recordatorios: recordatoriosPorDefecto(
+                _peso >= 25 ? 'Alta' : 'Media',
+              ),
+            ),
+          );
+        }
       }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e);
-    } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _guardando = false);
+        showErrorSnackBar(context, e);
+      }
     }
   }
 
-  Future<void> _confirmAndDelete() async {
-    if (!widget.isEditing) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('¿Eliminar ítem?'),
-        content: Text(
-          'Se eliminará "${widget.existing!.nombre}". Esta acción no se puede deshacer.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.tonal(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(
-              foregroundColor: Theme.of(ctx).colorScheme.onErrorContainer,
-              backgroundColor: Theme.of(ctx).colorScheme.errorContainer,
-            ),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+  Future<void> _eliminar() async {
+    final ok = await confirmarIOS(
+      context,
+      titulo: '¿Eliminar evaluación?',
+      mensaje: 'Se eliminará «${widget.existing!.nombre}». Las tareas '
+          'vinculadas se conservan, pero sin vínculo.',
     );
-    if (confirmed != true) return;
-    if (!mounted) return;
+    if (!ok) return;
     try {
       await FirestoreService.instance.deleteGradeItem(widget.existing!.id);
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      if (!mounted) return;
-      showErrorSnackBar(context, e);
+      if (mounted) showErrorSnackBar(context, e);
     }
+  }
+
+  void _aviso(String t) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+
+  Future<void> _elegirFecha() async {
+    final hoy = soloDia(DateTime.now());
+    final f = await elegirFecha(
+      context,
+      inicial: _fecha ?? hoy,
+      primera: DateTime(hoy.year - 1),
+      ultima: DateTime(hoy.year + 2, 12, 31),
+      titulo: 'Fecha de la evaluación',
+    );
+    if (f != null) setState(() => _fecha = f);
   }
 
   @override
   Widget build(BuildContext context) {
-    final color = widget.subject.color;
+    final p = TaskLogPalette.of(context);
+    final excede = _total > 100.0001;
+    final df = DateFormat('d MMM y', 'es');
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.isEditing ? 'Editar ítem' : 'Nuevo ítem evaluativo'),
-        actions: [
-          if (widget.isEditing)
-            IconButton(
-              tooltip: 'Eliminar',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _confirmAndDelete,
-            ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        child: Column(
           children: [
-            Card(
-              color: color.withValues(alpha: 0.08),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Icon(widget.subject.icon, color: color),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        widget.subject.nombre,
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w700,
+            EncabezadoHoja(
+              titulo:
+                  widget.isEditing ? 'Editar evaluación' : 'Nueva evaluación',
+              subtitulo: widget.subject.nombre,
+              onConfirmar: _guardar,
+              guardando: _guardando,
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                children: [
+                  GrupoIOS(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: TextField(
+                          controller: _nombre,
+                          autofocus: !widget.isEditing,
+                          textCapitalization: TextCapitalization.sentences,
+                          style: TextStyle(fontSize: 17, color: p.texto),
+                          decoration: InputDecoration(
+                            hintText: 'Ej. Parcial 1, Proyecto final',
+                            hintStyle: TextStyle(color: p.texto2),
+                            filled: false,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                  const EtiquetaGrupo('Peso en la materia'),
+                  GrupoIOS(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Peso',
+                                  style:
+                                      TextStyle(fontSize: 17, color: p.texto),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  '${_peso.round()} %',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: excede
+                                        ? AppColors.highPriority
+                                        : p.acento,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Slider(
+                              value: _peso.clamp(0, 100).toDouble(),
+                              min: 0,
+                              max: 100,
+                              divisions: 100,
+                              activeColor: excede
+                                  ? AppColors.highPriority
+                                  : AppColors.primary,
+                              onChanged: (v) => setState(() => _peso = v),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  PieGrupo(
+                    excede
+                        ? 'Con esta, la materia suma ${_total.round()} %: pasa '
+                            'del 100 %.'
+                        : 'Con esta, la materia suma ${_total.round()} %.',
+                    icono: excede
+                        ? Icons.error_rounded
+                        : Icons.check_circle_rounded,
+                    color: excede
+                        ? AppColors.highPriority
+                        : (_total.round() == 100
+                            ? AppColors.lowPriority
+                            : null),
+                  ),
+                  const EtiquetaGrupo('Nota'),
+                  GrupoIOS(
+                    children: [
+                      FilaIOS(
+                        titulo: 'Nota obtenida',
+                        trailing: _seVincula
+                            ? Text(
+                                widget.existing?.nota?.toStringAsFixed(1) ??
+                                    'Sin nota',
+                                style:
+                                    TextStyle(fontSize: 17, color: p.texto2),
+                              )
+                            : SizedBox(
+                                width: 100,
+                                child: TextField(
+                                  controller: _nota,
+                                  textAlign: TextAlign.right,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                                  style:
+                                      TextStyle(fontSize: 17, color: p.texto),
+                                  decoration: InputDecoration(
+                                    hintText: '0.0 – 5.0',
+                                    hintStyle: TextStyle(color: p.texto2),
+                                    filled: false,
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    contentPadding: EdgeInsets.zero,
+                                    isDense: true,
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
+                  PieGrupo(
+                    _seVincula
+                        ? 'La nota viene de la tarea «${_vinculadas.first.titulo}». '
+                            'Cámbiala desde la tarea.'
+                        : 'Déjala vacía si aún no la tienes. No contará en el '
+                            'promedio.',
+                  ),
+                  const SizedBox(height: 22),
+                  GrupoIOS(
+                    sangriaSeparador: 58,
+                    children: [
+                      FilaIOS(
+                        leading: const IconoCuadrado(
+                          icono: Icons.calendar_today_rounded,
+                          color: Color(0xFFFF3B30),
+                        ),
+                        titulo: 'Fecha',
+                        trailing: GestureDetector(
+                          onTap: _elegirFecha,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: p.grupo2,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _fecha == null ? 'Elegir' : df.format(_fecha!),
+                              style: TextStyle(fontSize: 15, color: p.texto),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (!widget.isEditing)
+                        FilaIOS(
+                          leading: const IconoCuadrado(
+                            icono: Icons.task_alt_rounded,
+                            color: Color(0xFF34C759),
+                          ),
+                          titulo: 'Crear también la tarea',
+                          subtitulo: _fecha == null
+                              ? 'Elige la fecha arriba'
+                              : 'Para el ${DateFormat('d MMM', 'es').format(_fecha!)}, '
+                                  'en ${widget.subject.nombre}',
+                          trailing: InterruptorIOS(
+                            valor: _crearTarea,
+                            onChanged: (v) {
+                              setState(() => _crearTarea = v);
+                              if (v && _fecha == null) _elegirFecha();
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (widget.isEditing) ...[
+                    const SizedBox(height: 28),
+                    GrupoIOS(
+                      children: [
+                        FilaIOS(
+                          tituloWidget: Center(
+                            child: Text(
+                              'Eliminar evaluación',
+                              style: TextStyle(
+                                fontSize: 17,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                          onTap: _eliminar,
+                        ),
+                      ],
                     ),
-                    if (_loadingUsado)
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      Text(
-                        'Disponible: ${_disponible.toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                   ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _nombreCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del ítem *',
-                hintText: 'Ej. Parcial 1, Proyecto final',
-              ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _porcentajeCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Porcentaje *',
-                suffixText: '%',
-                helperText: _loadingUsado
-                    ? null
-                    : _porcentajeIngresado > 0
-                        ? 'Quedarían ${_restanteTrasGuardar.toStringAsFixed(1)}% disponibles'
-                        : 'Hay ${_disponible.toStringAsFixed(1)}% disponibles',
-              ),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return 'Requerido';
-                final d = double.tryParse(v.replaceAll(',', '.'));
-                if (d == null) return 'Número inválido';
-                if (d <= 0 || d > 100) return 'Debe ser entre 0 y 100';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _notaCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Nota obtenida (opcional)',
-                hintText: '0.0 a 5.0',
-              ),
-            ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: _saving || _loadingUsado ? null : _submit,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.check),
-              label: Text(
-                widget.isEditing ? 'Guardar cambios' : 'Guardar ítem',
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: color,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                ],
               ),
             ),
           ],

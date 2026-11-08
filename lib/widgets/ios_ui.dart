@@ -832,6 +832,13 @@ class EncabezadoHoja extends StatelessWidget {
   }
 }
 
+/// Abre un formulario (nueva/editar tarea, materia, apunte, evaluación)
+/// como hoja de pantalla completa que sube desde abajo. Un solo lugar para
+/// que todos los formularios se presenten igual.
+Future<T?> abrirFormulario<T>(BuildContext context, Widget formulario) {
+  return abrirHoja<T>(context, formulario);
+}
+
 /// Abre una hoja de altura completa (formularios). La pantalla anterior
 /// queda visible detrás, como en iOS.
 Future<T?> abrirHoja<T>(BuildContext context, Widget hoja) {
@@ -840,6 +847,9 @@ Future<T?> abrirHoja<T>(BuildContext context, Widget hoja) {
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: false,
+    // Recorta el formulario a las esquinas redondeadas de la hoja.
+    clipBehavior: Clip.antiAlias,
+    backgroundColor: Theme.of(context).scaffoldBackgroundColor,
     builder: (_) => hoja,
   );
 }
@@ -851,6 +861,7 @@ Future<T?> abrirHojaMedia<T>(BuildContext context, Widget hoja) {
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
+    clipBehavior: Clip.antiAlias,
     builder: (ctx) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
       child: hoja,

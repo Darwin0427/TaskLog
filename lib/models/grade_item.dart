@@ -6,6 +6,10 @@ class GradeItem {
   final String nombre;
   final double porcentaje;
   final double? nota;
+
+  /// Fecha de la evaluación (opcional, ej. el día del parcial).
+  final DateTime? fecha;
+
   final DateTime? creadoEn;
 
   GradeItem({
@@ -14,6 +18,7 @@ class GradeItem {
     required this.nombre,
     required this.porcentaje,
     this.nota,
+    this.fecha,
     this.creadoEn,
   });
 
@@ -25,6 +30,7 @@ class GradeItem {
       nombre: (data['nombre'] ?? '') as String,
       porcentaje: (data['porcentaje'] as num?)?.toDouble() ?? 0,
       nota: (data['nota'] as num?)?.toDouble(),
+      fecha: (data['fecha'] as Timestamp?)?.toDate(),
       creadoEn: (data['creadoEn'] as Timestamp?)?.toDate(),
     );
   }
@@ -34,6 +40,7 @@ class GradeItem {
         'nombre': nombre,
         'porcentaje': porcentaje,
         'nota': nota,
+        if (fecha != null) 'fecha': Timestamp.fromDate(fecha!),
         'creadoEn': FieldValue.serverTimestamp(),
       };
 }

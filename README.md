@@ -13,6 +13,38 @@ para aprobar.
 
 ---
 
+## Rediseño iOS (noviembre 2026)
+
+La app se rediseñó con el lenguaje visual de iPhone (iOS 26), en modo
+oscuro y claro:
+
+- **Cuatro pestañas** en una barra flotante: Tareas · Calendario · Materias ·
+  Apuntes. El botón **+** al lado crea lo que corresponde a la pestaña.
+- **Tareas**: tarjetas Hoy / Atrasadas / Próximas / Completadas (tocarlas
+  filtra) y la lista agrupada por fecha, con la prioridad en «!».
+- **Filtros** en una hoja: materias, prioridad, orden y completadas.
+- **Calendario**: vistas Mes / Semana / Día, puntos de color por materia y la
+  agenda del día.
+- **Materias**: promedio general y nota ponderada por materia. En el detalle,
+  accesos a la clase virtual, «Nota necesaria» (con meta guardada) y horario,
+  y un segmentado Evaluaciones · Tareas · Apuntes.
+- **Apuntes**: pestaña propia con buscador; crear y ver son el mismo editor,
+  con listas de verificación.
+- **Formularios como hojas** que suben desde abajo, con ruedas de iOS para
+  fecha y hora.
+- **Perfil y ajustes** desde el avatar: nombre, estadísticas, notificaciones,
+  apariencia (automático, claro u oscuro), semestre, cerrar sesión y
+  **eliminar cuenta** (Apple lo exige para publicar).
+- **Acceso**: recuperar contraseña por correo y registro con nombre y
+  requisitos de contraseña en vivo.
+- **Sin conexión**: guardar ya no espera al servidor; los cambios se suben
+  cuando vuelve la red.
+
+Las secciones de abajo describen las funciones en detalle; donde hablen de
+botones o pantallas que cambiaron, vale lo de esta sección.
+
+---
+
 ## Cómo probar la aplicación
 
 ### 1. Instalar el APK
@@ -302,21 +334,21 @@ anteriores.
 
 ## Lo que NO está en esta entrega
 
-Para que quede claro qué se incluye y qué no:
+Ya resuelto en el rediseño iOS (ver arriba): filtros rápidos, indicador de
+vencidas, varios puntos por día en el calendario, botón «Hoy», pantalla de
+cuenta (con eliminar cuenta) y recuperación de contraseña.
+
+Sigue pendiente:
 
 - **Tareas recurrentes** (semanal / diaria / mensual con fecha de fin).
-- **Filtros rápidos en Tareas** (Hoy / Esta semana / Vencidas).
-- **Indicador visual** de tareas vencidas o que vencen hoy.
-- **Swipe actions** en tareas (deslizar para completar o borrar).
-- **Múltiples puntos** por día en el calendario (uno por materia).
-- **Botón "Hoy"** en el AppBar del calendario.
-- **Pantalla "Gestionar cuenta"** (perfil, preferencias, eliminar cuenta).
-- **Adjuntos en notas** (Firebase Storage).
-- **Recuperación de contraseña** por correo.
-- **Sign in con Google**.
-
-Estas funcionalidades forman el roadmap del proyecto. Están listadas para
-ser transparentes sobre el alcance actual.
+- **Deslizar para completar o borrar** tareas.
+- **Adjuntos en apuntes.** Requiere Firebase Storage, que desde octubre de
+  2024 solo funciona con el plan Blaze (pago por uso, pide tarjeta).
+- **Iniciar sesión con Google.** Si se agrega, Apple exige ofrecer también
+  «Iniciar sesión con Apple», y ese botón necesita la cuenta paga de Apple
+  Developer.
+- **Formato de texto en apuntes** (negrita, tablas). Hoy hay listas de
+  verificación y viñetas.
 
 ---
 
