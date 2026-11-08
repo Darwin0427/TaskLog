@@ -9,6 +9,7 @@ import '../../utils/error_messages.dart';
 import '../../widgets/animated_list_item.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/priority_badge.dart';
+import '../../widgets/tasklog_tab_bar.dart';
 import 'detalle_tarea_screen.dart';
 
 class TasksScreen extends StatelessWidget {
@@ -95,7 +96,12 @@ class _GroupedTasksListState extends State<_GroupedTasksList> {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        TaskLogTabBar.espacioInferior(context),
+      ),
       children: [
         if (alta.isNotEmpty)
           _section(context, 'Alta prioridad', alta, AppColors.highPriority),

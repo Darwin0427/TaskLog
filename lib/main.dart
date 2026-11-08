@@ -10,15 +10,29 @@ import 'screens/auth/auth_gate.dart';
 import 'screens/splash_screen.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 
-void main() {
-  // Arrancamos sin esperar a Firebase: la UI ya puede pintar el splash
-  // morado mientras Firebase termina de inicializarse en background.
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // El tema elegido se lee antes de pintar, para que el splash no
+  // parpadee entre claro y oscuro. Es una lectura local y rápida.
+  await ThemeController.instance.cargar();
+  // No esperamos a Firebase: la UI ya puede pintar el splash mientras
+  // Firebase termina de inicializarse en background.
   runApp(const GestorTareasApp());
 }
 
-class GestorTareasApp extends StatelessWidget {
+class GestorTareasApp extends StatefulWidget {
   const GestorTareasApp({super.key});
+
+  @override
+  State<GestorTareasApp> createState() => _GestorTareasAppState();
+}
+
+class _GestorTareasAppState extends State<GestorTareasApp> {
+  /// Se crea una sola vez: cambiar de tema reconstruye la app, y sin esto
+  /// Firebase se volvería a inicializar.
+  late final Future<String?> _arranque = _bootstrap();
 
   /// Inicializa Firebase, configura caché offline y locales en español.
   /// Si algo falla, retorna el mensaje de error para mostrarlo en el splash.
@@ -63,13 +77,20 @@ class GestorTareasApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.instance,
+      builder: (context, modo, _) => _app(modo),
+    );
+  }
+
+  Widget _app(ThemeMode modo) {
     return MaterialApp(
       navigatorKey: NotificationService.navigatorKey,
-      title: 'Gestor de tareas',
+      title: 'TaskLog',
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: modo,
       locale: const Locale('es'),
       supportedLocales: const [
         Locale('es'),
@@ -81,7 +102,7 @@ class GestorTareasApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       home: FutureBuilder<String?>(
-        future: _bootstrap(),
+        future: _arranque,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const SplashScreen(message: 'Cargando...');

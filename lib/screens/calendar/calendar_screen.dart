@@ -8,6 +8,7 @@ import '../../services/firestore_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/priority_badge.dart';
+import '../../widgets/tasklog_tab_bar.dart';
 import '../tasks/detalle_tarea_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -285,7 +286,12 @@ class _DayTasksList extends StatelessWidget {
       onRefresh: FirestoreService.instance.refreshFromServer,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        TaskLogTabBar.espacioInferior(context),
+      ),
         itemCount: items.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, i) {

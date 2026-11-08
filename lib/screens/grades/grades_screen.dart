@@ -1,13 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/grade_item.dart';
 import '../../models/subject.dart';
 import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/theme_controller.dart';
 import '../../widgets/animated_list_item.dart';
 import '../../widgets/empty_state.dart';
-import '../forms/crear_materia_screen.dart';
+import '../../widgets/tasklog_tab_bar.dart';
 import '../notifications/onboarding_notificaciones_screen.dart';
 import 'detalle_materia_screen.dart';
 
@@ -18,26 +19,8 @@ class GradesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calificaciones'),
-        actions: [
-          IconButton(
-            tooltip: 'Ajustes de notificaciones',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) =>
-                    const OnboardingNotificacionesScreen(allowSkip: true),
-              ),
-            ),
-            icon: const Icon(Icons.notifications_active_outlined),
-          ),
-          IconButton(
-            tooltip: 'Cerrar sesión',
-            onPressed: () async {
-              await AuthService.instance.signOut();
-            },
-            icon: const Icon(Icons.logout),
-          ),
-        ],
+        title: const Text('Materias'),
+        actions: const [_MenuCuenta()],
       ),
       body: StreamBuilder<List<Subject>>(
         stream: FirestoreService.instance.watchSubjects(),
@@ -50,68 +33,92 @@ class GradesScreen extends StatelessWidget {
           }
           final subjects = snap.data ?? const <Subject>[];
           if (subjects.isEmpty) {
-            return Stack(
-              children: [
-                const EmptyState(
-                  icon: Icons.school_outlined,
-                  title: 'No tienes materias',
-                  subtitle:
-                      'Toca el botón + para crear tu primera materia.',
-                ),
-                Positioned(
-                  bottom: 96,
-                  right: 16,
-                  child: FloatingActionButton.extended(
-                    heroTag: 'fab_grades_empty',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const CrearMateriaScreen(),
-                      ),
-                    ),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Nueva materia'),
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
+            return const EmptyState(
+              icon: Icons.school_outlined,
+              title: 'No tienes materias',
+              subtitle: 'Toca el botón + para crear tu primera materia.',
             );
           }
-          return Stack(
-            children: [
-              RefreshIndicator(
-                onRefresh: FirestoreService.instance.refreshFromServer,
-                child: ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-                  itemCount: subjects.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                  itemBuilder: (context, i) => AnimatedListItem(
-                    key: ValueKey('subject_${subjects[i].id}'),
-                    child: _SubjectCard(subject: subjects[i]),
-                  ),
-                ),
+          return RefreshIndicator(
+            onRefresh: FirestoreService.instance.refreshFromServer,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                TaskLogTabBar.espacioInferior(context),
               ),
-              Positioned(
-                bottom: 96,
-                right: 16,
-                child: FloatingActionButton.extended(
-                  heroTag: 'fab_grades',
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const CrearMateriaScreen(),
-                    ),
-                  ),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Materia'),
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
+              itemCount: subjects.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, i) => AnimatedListItem(
+                key: ValueKey('subject_${subjects[i].id}'),
+                child: _SubjectCard(subject: subjects[i]),
               ),
-            ],
+            ),
           );
         },
       ),
+    );
+  }
+}
+
+/// Menú de cuenta (temporal hasta la pantalla de Perfil, fase 5):
+/// apariencia, ajustes de notificaciones (solo Android) y cerrar sesión.
+class _MenuCuenta extends StatelessWidget {
+  const _MenuCuenta();
+
+  @override
+  Widget build(BuildContext context) {
+    final esAndroid = defaultTargetPlatform == TargetPlatform.android;
+    return PopupMenuButton<String>(
+      tooltip: 'Cuenta',
+      icon: const Icon(Icons.account_circle_outlined),
+      onSelected: (accion) async {
+        switch (accion) {
+          case 'tema':
+            await mostrarSelectorTema(context);
+          case 'notificaciones':
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    const OnboardingNotificacionesScreen(allowSkip: true),
+              ),
+            );
+          case 'salir':
+            await AuthService.instance.signOut();
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'tema',
+          child: ListTile(
+            leading: Icon(Icons.dark_mode_outlined),
+            title: Text('Apariencia'),
+          ),
+        ),
+        if (esAndroid)
+          const PopupMenuItem(
+            value: 'notificaciones',
+            child: ListTile(
+              leading: Icon(Icons.notifications_active_outlined),
+              title: Text('Ajustes de notificaciones'),
+            ),
+          ),
+        PopupMenuItem(
+          value: 'salir',
+          child: ListTile(
+            leading: Icon(
+              Icons.logout_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: Text(
+              'Cerrar sesión',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

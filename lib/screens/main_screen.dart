@@ -4,14 +4,21 @@ import 'package:flutter/material.dart';
 
 import '../services/firestore_service.dart';
 import '../services/notification_setup_service.dart';
-import '../theme/app_theme.dart';
+import '../widgets/tasklog_tab_bar.dart';
 import 'calendar/calendar_screen.dart';
+import 'forms/crear_materia_screen.dart';
 import 'forms/crear_nota_screen.dart';
 import 'forms/crear_tarea_screen.dart';
 import 'grades/grades_screen.dart';
+import 'notes/apuntes_screen.dart';
 import 'notifications/onboarding_notificaciones_screen.dart';
 import 'tasks/tasks_screen.dart';
 
+/// Marco principal: cuatro pestañas (Tareas · Calendario · Materias ·
+/// Apuntes) en una barra flotante, con el botón «+» a su derecha.
+///
+/// El «+» crea lo que corresponde a la pestaña abierta: tarea en Tareas y
+/// Calendario, materia en Materias y apunte en Apuntes.
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -19,27 +26,44 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen>
-    with TickerProviderStateMixin {
+class _MainScreenState extends State<MainScreen> {
   int _index = 0;
-  bool _fabOpen = false;
-  late final AnimationController _fabAnim;
 
   static const _tabs = <Widget>[
     TasksScreen(),
     CalendarScreen(),
     GradesScreen(),
+    ApuntesScreen(),
+  ];
+
+  static const _items = <TabBarItem>[
+    TabBarItem(
+      label: 'Tareas',
+      icon: Icons.checklist_rounded,
+      selectedIcon: Icons.checklist_rounded,
+    ),
+    TabBarItem(
+      label: 'Calendario',
+      icon: Icons.calendar_today_outlined,
+      selectedIcon: Icons.calendar_today_rounded,
+    ),
+    TabBarItem(
+      label: 'Materias',
+      icon: Icons.school_outlined,
+      selectedIcon: Icons.school_rounded,
+    ),
+    TabBarItem(
+      label: 'Apuntes',
+      icon: Icons.edit_note_rounded,
+      selectedIcon: Icons.edit_note_rounded,
+    ),
   ];
 
   @override
   void initState() {
     super.initState();
-    _fabAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    );
-    // Después del primer frame, evaluar si toca mostrar el onboarding
-    // de notificaciones (primera vez + fabricante restrictivo).
+    // Después del primer frame: permiso de notificaciones (y onboarding en
+    // Android) + sincronización de recordatorios.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_prepararNotificaciones());
     });
@@ -83,174 +107,49 @@ class _MainScreenState extends State<MainScreen>
     }
   }
 
-  @override
-  void dispose() {
-    _fabAnim.dispose();
-    super.dispose();
-  }
+  String get _accionMas => switch (_index) {
+        2 => 'Nueva materia',
+        3 => 'Nuevo apunte',
+        _ => 'Nueva tarea',
+      };
 
-  void _toggleFab() {
-    setState(() {
-      _fabOpen = !_fabOpen;
-      if (_fabOpen) {
-        _fabAnim.forward();
-      } else {
-        _fabAnim.reverse();
-      }
-    });
-  }
-
-  void _closeFab() {
-    if (_fabOpen) _toggleFab();
-  }
-
-  Future<void> _openCrearTarea() async {
-    _closeFab();
+  Future<void> _crear() async {
+    final Widget pantalla = switch (_index) {
+      2 => const CrearMateriaScreen(),
+      3 => const CrearNotaScreen(),
+      _ => const CrearTareaScreen(),
+    };
+    // `fullscreenDialog` la presenta subiendo desde abajo, como una hoja
+    // de iOS. En la fase 4 los formularios pasan a ser hojas de verdad.
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CrearTareaScreen()),
-    );
-  }
-
-  Future<void> _openCrearNota() async {
-    _closeFab();
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const CrearNotaScreen()),
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => pantalla,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // La barra flota encima del contenido; el teclado no la mueve.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          IndexedStack(index: _index, children: _tabs),
-          if (_fabOpen)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _closeFab,
-                child: Container(color: Colors.black.withValues(alpha: 0.25)),
-              ),
+          Positioned.fill(
+            child: IndexedStack(index: _index, children: _tabs),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: TaskLogTabBar(
+              items: _items,
+              currentIndex: _index,
+              onTap: (i) => setState(() => _index = i),
+              onAdd: _crear,
+              addTooltip: _accionMas,
             ),
-        ],
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          _MiniFab(
-            visible: _fabOpen,
-            anim: _fabAnim,
-            label: 'Nueva nota',
-            icon: Icons.note_add_outlined,
-            onTap: _openCrearNota,
-            heroTag: 'fab_nota',
-          ),
-          const SizedBox(height: 12),
-          _MiniFab(
-            visible: _fabOpen,
-            anim: _fabAnim,
-            label: 'Nueva tarea',
-            icon: Icons.add_task,
-            onTap: _openCrearTarea,
-            heroTag: 'fab_tarea',
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: 'fab_main',
-            onPressed: _toggleFab,
-            backgroundColor: AppColors.primary,
-            child: AnimatedRotation(
-              duration: const Duration(milliseconds: 220),
-              turns: _fabOpen ? 0.125 : 0,
-              child: const Icon(Icons.add, color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) {
-          _closeFab();
-          setState(() => _index = i);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.task_alt_outlined),
-            selectedIcon: Icon(Icons.task_alt),
-            label: 'Tareas',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: 'Calendario',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Calificaciones',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniFab extends StatelessWidget {
-  final bool visible;
-  final AnimationController anim;
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final String heroTag;
-
-  const _MiniFab({
-    required this.visible,
-    required this.anim,
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    required this.heroTag,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (context, child) => IgnorePointer(
-        ignoring: !visible,
-        child: Opacity(
-          opacity: anim.value,
-          child: Transform.translate(
-            offset: Offset(0, (1 - anim.value) * 16),
-            child: child,
-          ),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 4,
-                ),
-              ],
-            ),
-            child: Text(label),
-          ),
-          const SizedBox(width: 8),
-          FloatingActionButton.small(
-            heroTag: heroTag,
-            onPressed: onTap,
-            backgroundColor: AppColors.primary,
-            child: Icon(icon, color: Colors.white),
           ),
         ],
       ),
