@@ -274,7 +274,7 @@ class CampoEtiquetado extends StatelessWidget {
               ),
             ),
           ),
-          if (sufijo != null) sufijo!,
+          ?sufijo,
         ],
       ),
     );

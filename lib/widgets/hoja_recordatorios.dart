@@ -46,7 +46,8 @@ class _HojaRecordatorios extends StatefulWidget {
 }
 
 class _HojaRecordatoriosState extends State<_HojaRecordatorios> {
-  late List<TaskReminder> _lista = List<TaskReminder>.from(widget.inicial);
+  late final List<TaskReminder> _lista =
+      List<TaskReminder>.from(widget.inicial);
   late DateTime _fechaCustom = _sugerida();
   TimeOfDay _horaCustom = const TimeOfDay(hour: 20, minute: 0);
   late final Future<bool> _permiso =

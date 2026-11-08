@@ -44,7 +44,7 @@ class EncabezadoGrande extends StatelessWidget {
                 height: 40,
                 child: Row(
                   children: [
-                    if (accionIzquierda != null) accionIzquierda!,
+                    ?accionIzquierda,
                     const Spacer(),
                     for (var i = 0; i < acciones.length; i++) ...[
                       if (i > 0) const SizedBox(width: 10),
@@ -406,7 +406,7 @@ class TituloSeccion extends StatelessWidget {
               ),
             ),
           ),
-          if (trailing != null) trailing!,
+          ?trailing,
         ],
       ),
     );
