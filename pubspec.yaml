@@ -52,7 +52,13 @@ flutter_launcher_icons:
   ios: true
   # Apple rechaza íconos con transparencia.
   remove_alpha_ios: true
-  image_path: "LogoTaskLog.jpeg"
+  # Logo TaskLog: glifo "TL" blanco sobre degradado #8A82F4 → #3A3196.
+  # Fuente vectorial: assets/branding/tasklog_glifo.svg
+  image_path: "assets/branding/icono_app.png"
+  # iOS 18+: variantes para el modo oscuro y el modo tintado de la pantalla
+  # de inicio.
+  image_path_ios_dark_transparent: "assets/branding/icono_ios_oscuro.png"
+  image_path_ios_tinted_grayscale: "assets/branding/icono_ios_tintado.png"
   min_sdk_android: 21
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "LogoTaskLog.jpeg"
+  adaptive_icon_background: "assets/branding/android_fondo.png"
+  adaptive_icon_foreground: "assets/branding/android_primer_plano.png"

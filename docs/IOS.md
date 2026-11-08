@@ -128,7 +128,8 @@ IDs nuevos por semana.
 - `ios/Podfile`: creado, con los ajustes que pide `awesome_notifications`.
 - iOS mínimo: **15.0**.
 - Nombre en el iPhone: **TaskLog**. Ícono generado desde
-  `LogoTaskLog.jpeg` durante la compilación.
+  `assets/branding/icono_app.png` durante la compilación (con variantes oscura y
+  tintada para iOS 18+).
 - **Límite de 64 notificaciones de iOS:** la app ya no programa todos los
   recordatorios de golpe. Programa solo los 60 más próximos (400 en Android)
   y vuelve a calcular al abrir la app y cada vez que creas, editas,

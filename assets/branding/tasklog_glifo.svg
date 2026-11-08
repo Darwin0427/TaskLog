@@ -1,0 +1,11 @@
+<!-- Glifo de TaskLog. Caja de 78x78. Cambia fill para cada uso:
+     blanco sobre color, negro sobre fondos claros, lila #9D95FF sobre negro. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 78 78">
+  <g fill="#FFFFFF">
+    <rect x="0" y="0" width="78" height="15.5" rx="7.75"/>
+    <rect x="31" y="4" width="15.5" height="74" rx="3"/>
+    <rect x="31" y="62.5" width="44" height="15.5" rx="7.75"/>
+    <rect x="31" y="62.5" width="19" height="15.5" rx="3"/>
+  </g>
+  <circle cx="62.5" cy="39.5" r="7.6" fill="#C9C3FB"/>
+</svg>
