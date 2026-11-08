@@ -238,9 +238,13 @@ ThemeData _buildTheme(Brightness brightness) {
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        minimumSize: const Size.fromHeight(50),
+        // Ojo: nunca `Size.fromHeight` aquí. Eso da ancho infinito y, dentro
+        // de una fila (título + botón), aplasta el texto de al lado.
+        // Los botones que deben ocupar todo el ancho ya van envueltos en un
+        // SizedBox(width: double.infinity).
+        minimumSize: const Size(64, 44),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -248,9 +252,9 @@ ThemeData _buildTheme(Brightness brightness) {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
-        minimumSize: const Size(64, 50),
+        minimumSize: const Size(64, 44),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
