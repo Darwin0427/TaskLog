@@ -54,6 +54,20 @@ class NotificationService {
   static int get limiteProgramadas =>
       defaultTargetPlatform == TargetPlatform.iOS ? 60 : 400;
 
+  /// Nivel de las notificaciones según la plataforma.
+  ///
+  /// - Android: `Max` + `wakeUpScreen`, para que MIUI/HyperOS no las
+  ///   silencie en segundo plano.
+  /// - iOS: notificación **activa** (la normal: suena, prende la pantalla y
+  ///   aparece a su hora). En iOS, `awesome_notifications` convierte
+  ///   `High`/`Max` y `wakeUpScreen` en nivel *Time Sensitive*, que pide un
+  ///   permiso especial de Apple que no existe en la cuenta gratis y que no
+  ///   queremos: no son alarmas.
+  static bool get _esIOS => defaultTargetPlatform == TargetPlatform.iOS;
+  static NotificationImportance get _importancia =>
+      _esIOS ? NotificationImportance.Default : NotificationImportance.Max;
+  static bool get _despertarPantalla => !_esIOS;
+
   /// Cola para que dos sincronizaciones no se pisen entre sí.
   Future<void> _colaSync = Future<void>.value();
 
@@ -83,9 +97,9 @@ class NotificationService {
           channelKey: _channelKey,
           channelName: _channelName,
           channelDescription: _channelDescription,
-          // `Max` (nivel más alto) para que aparezca como banner heads-up
-          // y no la pueda silenciar MIUI en background.
-          importance: NotificationImportance.Max,
+          // Android: `Max` para banner heads-up y que MIUI no la silencie.
+          // iOS: `Default` = notificación activa (ver `_importancia`).
+          importance: _importancia,
           defaultColor: const Color(0xFF534AB7),
           ledColor: const Color(0xFF534AB7),
           playSound: true,
@@ -227,7 +241,7 @@ class NotificationService {
           // MIUI) pero sin `fullScreenIntent` para que se comporte como
           // notificación normal, no como despertador.
           category: NotificationCategory.Alarm,
-          wakeUpScreen: true,
+          wakeUpScreen: _despertarPantalla,
         ),
         schedule: NotificationCalendar.fromDate(
           date: fecha,
@@ -302,7 +316,7 @@ class NotificationService {
           payload: {'taskId': 'test'},
           notificationLayout: NotificationLayout.Default,
           category: NotificationCategory.Alarm,
-          wakeUpScreen: true,
+          wakeUpScreen: _despertarPantalla,
         ),
         schedule: NotificationCalendar.fromDate(
           date: target,

@@ -137,6 +137,11 @@ IDs nuevos por semana.
   `test/recordatorios_scheduler_test.dart`.
 - Al **cerrar sesión** se borran los recordatorios programados, para que
   otra cuenta en el mismo teléfono no reciba avisos ajenos.
+- **Notificaciones normales en iPhone:** llegan como notificación *activa*
+  (suenan, prenden la pantalla y aparecen a su hora), no como urgentes ni
+  tipo alarma. Si el iPhone está en un modo de Concentración o con el
+  resumen programado activado, iOS puede retenerlas: eso se ajusta en
+  Ajustes → Notificaciones. En Android no cambió nada.
 - El onboarding de Xiaomi/Huawei solo corre en Android. En iPhone solo se
   pide el permiso de notificaciones.
 
