@@ -59,6 +59,7 @@ flutter_launcher_icons:
   # de inicio.
   image_path_ios_dark_transparent: "assets/branding/icono_ios_oscuro.png"
   image_path_ios_tinted_grayscale: "assets/branding/icono_ios_tintado.png"
+  desaturate_tinted_to_grayscale_ios: true
   min_sdk_android: 21
   adaptive_icon_background: "assets/branding/android_fondo.png"
   adaptive_icon_foreground: "assets/branding/android_primer_plano.png"
