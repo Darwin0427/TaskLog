@@ -1,64 +1,109 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/filtros_tareas.dart';
 import '../../models/subject.dart';
 import '../../models/task_item.dart';
 import '../../services/firestore_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/error_messages.dart';
-import '../../widgets/animated_list_item.dart';
 import '../../widgets/empty_state.dart';
-import '../../widgets/priority_badge.dart';
+import '../../widgets/hoja_filtros.dart';
+import '../../widgets/ios_ui.dart';
 import '../../widgets/tasklog_tab_bar.dart';
+import '../perfil/perfil_screen.dart';
 import 'detalle_tarea_screen.dart';
 
-class TasksScreen extends StatelessWidget {
+/// Las cuatro tarjetas de arriba. Tocar una filtra la lista por esa
+/// categoría (tocarla otra vez la quita).
+enum CategoriaTareas { hoy, atrasadas, proximas, completadas }
+
+/// Pestaña Tareas: tarjetas Hoy / Atrasadas / Próximas / Completadas y la
+/// lista agrupada por fecha (lo atrasado y lo de hoy primero).
+class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
+
+  @override
+  State<TasksScreen> createState() => _TasksScreenState();
+}
+
+class _TasksScreenState extends State<TasksScreen> {
+  CategoriaTareas? _categoria;
+  FiltrosTareas _filtros = FiltrosTareas.ninguno;
+
+  Future<void> _abrirFiltros(
+    List<Subject> materias,
+    List<TaskItem> tareas,
+  ) async {
+    final nuevos = await mostrarHojaFiltros(
+      context,
+      actuales: _filtros,
+      materias: materias,
+      tareas: tareas,
+    );
+    if (nuevos != null) setState(() => _filtros = nuevos);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tareas'),
-      ),
       body: StreamBuilder<List<Subject>>(
         stream: FirestoreService.instance.watchSubjects(),
         builder: (context, subjSnap) {
-          final subjectsById = <String, Subject>{
-            for (final s in (subjSnap.data ?? const <Subject>[])) s.id: s,
-          };
+          final materias = subjSnap.data ?? const <Subject>[];
+          final porId = <String, Subject>{for (final s in materias) s.id: s};
           return StreamBuilder<List<TaskItem>>(
             stream: FirestoreService.instance.watchTasks(),
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snap.hasError) {
-                return Center(child: Text('Error: ${snap.error}'));
-              }
-              final tasks = snap.data ?? const <TaskItem>[];
-              if (tasks.isEmpty) {
-                return RefreshIndicator(
-                  onRefresh: FirestoreService.instance.refreshFromServer,
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 120),
-                      EmptyState(
-                        icon: Icons.task_alt_outlined,
-                        title: 'No tienes tareas',
-                        subtitle:
-                            'Toca el botón + para crear tu primera tarea.',
-                      ),
-                    ],
-                  ),
-                );
-              }
+              final todas = snap.data ?? const <TaskItem>[];
               return RefreshIndicator(
                 onRefresh: FirestoreService.instance.refreshFromServer,
-                child: _GroupedTasksList(
-                  tasks: tasks,
-                  subjectsById: subjectsById,
+                edgeOffset: MediaQuery.paddingOf(context).top,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  slivers: [
+                    EncabezadoGrande(
+                      antetitulo: DateFormat("EEEE d 'de' MMMM", 'es')
+                          .format(DateTime.now()),
+                      titulo: 'Tareas',
+                      acciones: [
+                        BotonCirculo(
+                          icono: Icons.tune_rounded,
+                          tooltip: 'Filtros',
+                          activo: _filtros.activos,
+                          onTap: () => _abrirFiltros(materias, todas),
+                        ),
+                        AvatarUsuario(onTap: () => abrirPerfil(context)),
+                      ],
+                    ),
+                    if (snap.connectionState == ConnectionState.waiting &&
+                        !snap.hasData)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (snap.hasError)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(friendlyErrorMessage(snap.error!)),
+                        ),
+                      )
+                    else if (todas.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: EmptyState(
+                          icon: Icons.checklist_rounded,
+                          title: 'No tienes tareas',
+                          subtitle:
+                              'Toca el botón + para crear tu primera tarea.',
+                        ),
+                      )
+                    else
+                      ..._contenido(context, todas, porId),
+                  ],
                 ),
               );
             },
@@ -67,170 +112,366 @@ class TasksScreen extends StatelessWidget {
       ),
     );
   }
+
+  List<Widget> _contenido(
+    BuildContext context,
+    List<TaskItem> todas,
+    Map<String, Subject> porId,
+  ) {
+    final ahora = DateTime.now();
+    final filtradas = todas.where(_filtros.acepta).toList();
+    final clasif = ClasificacionTareas(filtradas, ahora);
+
+    final secciones = <_Seccion>[];
+    switch (_categoria) {
+      case CategoriaTareas.hoy:
+        secciones.add(_Seccion('Hoy', clasif.hoy));
+      case CategoriaTareas.atrasadas:
+        secciones.add(
+          _Seccion('Atrasadas', clasif.atrasadas, color: AppColors.highPriority),
+        );
+      case CategoriaTareas.proximas:
+        secciones.addAll(_porDia(clasif.proximas, ahora));
+      case CategoriaTareas.completadas:
+        secciones.add(_Seccion('Completadas', clasif.completadas));
+      case null:
+        if (clasif.atrasadas.isNotEmpty) {
+          secciones.add(
+            _Seccion('Atrasadas', clasif.atrasadas,
+                color: AppColors.highPriority),
+          );
+        }
+        if (clasif.hoy.isNotEmpty) secciones.add(_Seccion('Hoy', clasif.hoy));
+        secciones.addAll(_porDia(clasif.proximas, ahora));
+        if (_filtros.mostrarCompletadas && clasif.completadas.isNotEmpty) {
+          secciones.add(_Seccion('Completadas', clasif.completadas));
+        }
+    }
+    for (final s in secciones) {
+      _ordenar(s.tareas, porId, completadas: s.titulo == 'Completadas');
+    }
+
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        sliver: SliverToBoxAdapter(
+          child: _TarjetasMetricas(
+            clasif: clasif,
+            seleccionada: _categoria,
+            onTap: (c) =>
+                setState(() => _categoria = _categoria == c ? null : c),
+          ),
+        ),
+      ),
+      if (secciones.every((s) => s.tareas.isEmpty))
+        SliverPadding(
+          padding: const EdgeInsets.only(top: 48),
+          sliver: SliverToBoxAdapter(
+            child: _VacioCategoria(categoria: _categoria),
+          ),
+        ),
+      SliverPadding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          0,
+          16,
+          TaskLogTabBar.espacioInferior(context),
+        ),
+        sliver: SliverList.list(
+          children: [
+            for (final s in secciones)
+              if (s.tareas.isNotEmpty) ...[
+                TituloSeccion(s.titulo, color: s.color),
+                GrupoIOS(
+                  sangriaSeparador: 52,
+                  children: [
+                    for (final t in s.tareas)
+                      FilaTarea(
+                        key: ValueKey('tarea_${t.id}'),
+                        tarea: t,
+                        materia: porId[t.subjectId],
+                        ahora: ahora,
+                      ),
+                  ],
+                ),
+              ],
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Agrupa las próximas por día: «Mañana», luego «Jueves 17 sep», etc.
+  List<_Seccion> _porDia(List<TaskItem> tareas, DateTime ahora) {
+    final manana = soloDia(ahora).add(const Duration(days: 1));
+    final grupos = <DateTime, List<TaskItem>>{};
+    for (final t in tareas) {
+      grupos.putIfAbsent(soloDia(t.fechaLimite), () => []).add(t);
+    }
+    final dias = grupos.keys.toList()..sort();
+    final fmt = DateFormat('EEEE d MMM', 'es');
+    return [
+      for (final d in dias)
+        _Seccion(
+          d == manana ? 'Mañana' : _capitalizar(fmt.format(d)),
+          grupos[d]!,
+        ),
+    ];
+  }
+
+  void _ordenar(
+    List<TaskItem> l,
+    Map<String, Subject> porId, {
+    required bool completadas,
+  }) {
+    if (completadas) {
+      l.sort((a, b) => (b.completadaEn ?? b.fechaLimite)
+          .compareTo(a.completadaEn ?? a.fechaLimite));
+      return;
+    }
+    switch (_filtros.orden) {
+      case OrdenTareas.fecha:
+        l.sort((a, b) => a.fechaLimite.compareTo(b.fechaLimite));
+      case OrdenTareas.prioridad:
+        l.sort((a, b) {
+          final c = FiltrosTareas.pesoPrioridad(a.importancia)
+              .compareTo(FiltrosTareas.pesoPrioridad(b.importancia));
+          return c != 0 ? c : a.fechaLimite.compareTo(b.fechaLimite);
+        });
+      case OrdenTareas.materia:
+        l.sort((a, b) {
+          final c = (porId[a.subjectId]?.nombre ?? '')
+              .compareTo(porId[b.subjectId]?.nombre ?? '');
+          return c != 0 ? c : a.fechaLimite.compareTo(b.fechaLimite);
+        });
+    }
+  }
 }
 
-class _GroupedTasksList extends StatefulWidget {
-  final List<TaskItem> tasks;
-  final Map<String, Subject> subjectsById;
-  const _GroupedTasksList({
-    required this.tasks,
-    required this.subjectsById,
+String _capitalizar(String s) =>
+    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+class _Seccion {
+  final String titulo;
+  final List<TaskItem> tareas;
+  final Color? color;
+  _Seccion(this.titulo, List<TaskItem> tareas, {this.color})
+      : tareas = List<TaskItem>.from(tareas);
+}
+
+/// Reparte las tareas en atrasadas, de hoy, próximas y completadas.
+///
+/// Una tarea sin hora (00:00) cuenta como de todo el día: solo se atrasa
+/// cuando el día ya pasó. Con hora, se atrasa en cuanto pasa esa hora.
+class ClasificacionTareas {
+  final List<TaskItem> atrasadas = [];
+  final List<TaskItem> hoy = [];
+  final List<TaskItem> proximas = [];
+  final List<TaskItem> completadas = [];
+
+  ClasificacionTareas(Iterable<TaskItem> tareas, DateTime ahora) {
+    final dia = soloDia(ahora);
+    for (final t in tareas) {
+      if (t.completada) {
+        completadas.add(t);
+      } else if (estaVencida(t, ahora)) {
+        atrasadas.add(t);
+      } else if (soloDia(t.fechaLimite) == dia) {
+        hoy.add(t);
+      } else {
+        proximas.add(t);
+      }
+    }
+  }
+
+  static bool estaVencida(TaskItem t, DateTime ahora) {
+    if (t.completada) return false;
+    if (tieneHora(t.fechaLimite)) return t.fechaLimite.isBefore(ahora);
+    return soloDia(t.fechaLimite).isBefore(soloDia(ahora));
+  }
+}
+
+class _TarjetasMetricas extends StatelessWidget {
+  final ClasificacionTareas clasif;
+  final CategoriaTareas? seleccionada;
+  final ValueChanged<CategoriaTareas> onTap;
+
+  const _TarjetasMetricas({
+    required this.clasif,
+    required this.seleccionada,
+    required this.onTap,
   });
 
   @override
-  State<_GroupedTasksList> createState() => _GroupedTasksListState();
-}
-
-class _GroupedTasksListState extends State<_GroupedTasksList> {
-  bool _completadasExpandidas = false;
-
-  @override
   Widget build(BuildContext context) {
-    final pendientes = widget.tasks.where((t) => !t.completada).toList();
-    final completadas = widget.tasks.where((t) => t.completada).toList();
-
-    final alta = pendientes.where((t) => t.importancia == 'Alta').toList();
-    final media =
-        pendientes.where((t) => t.importancia == 'Media').toList();
-    final baja = pendientes.where((t) => t.importancia == 'Baja').toList();
-
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(
-        16,
-        8,
-        16,
-        TaskLogTabBar.espacioInferior(context),
-      ),
-      children: [
-        if (alta.isNotEmpty)
-          _section(context, 'Alta prioridad', alta, AppColors.highPriority),
-        if (media.isNotEmpty)
-          _section(context, 'Media prioridad', media, AppColors.mediumPriority),
-        if (baja.isNotEmpty)
-          _section(context, 'Baja prioridad', baja, AppColors.lowPriority),
-        if (pendientes.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(
-              '¡Todas las tareas completadas! 🎉',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+    Widget tarjeta(
+      CategoriaTareas c,
+      String etiqueta,
+      IconData icono,
+      Color color,
+      int n,
+    ) =>
+        Expanded(
+          child: _TarjetaMetrica(
+            etiqueta: etiqueta,
+            icono: icono,
+            color: color,
+            cantidad: n,
+            seleccionada: seleccionada == c,
+            onTap: () => onTap(c),
           ),
-        if (completadas.isNotEmpty)
-          _completadasSection(context, completadas),
+        );
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            tarjeta(CategoriaTareas.hoy, 'Hoy', Icons.today_rounded,
+                const Color(0xFF0A84FF), clasif.hoy.length),
+            const SizedBox(width: 10),
+            tarjeta(CategoriaTareas.atrasadas, 'Atrasadas',
+                Icons.schedule_rounded, AppColors.highPriority,
+                clasif.atrasadas.length),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            tarjeta(CategoriaTareas.proximas, 'Próximas',
+                Icons.calendar_month_rounded, AppColors.mediumPriority,
+                clasif.proximas.length),
+            const SizedBox(width: 10),
+            tarjeta(CategoriaTareas.completadas, 'Completadas',
+                Icons.check_rounded, const Color(0xFF8E8E93),
+                clasif.completadas.length),
+          ],
+        ),
       ],
     );
   }
+}
 
-  Widget _section(
-    BuildContext context,
-    String label,
-    List<TaskItem> items,
-    Color color,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
+class _TarjetaMetrica extends StatelessWidget {
+  final String etiqueta;
+  final IconData icono;
+  final Color color;
+  final int cantidad;
+  final bool seleccionada;
+  final VoidCallback onTap;
+
+  const _TarjetaMetrica({
+    required this.etiqueta,
+    required this.icono,
+    required this.color,
+    required this.cantidad,
+    required this.seleccionada,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    return Semantics(
+      button: true,
+      selected: seleccionada,
+      label: '$etiqueta: $cantidad',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+          decoration: BoxDecoration(
+            color: seleccionada ? color.withValues(alpha: 0.22) : p.grupo,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: seleccionada ? color : Colors.transparent,
+              width: 1.2,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+              Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
                     ),
+                    child: Icon(icono, size: 18, color: Colors.white),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$cantidad',
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w700,
+                      color: p.texto,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(height: 6),
               Text(
-                '(${items.length})',
-                style: Theme.of(context).textTheme.bodySmall,
+                etiqueta,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: p.texto2,
+                ),
               ),
             ],
           ),
         ),
-        ...items.map((t) => Padding(
-              key: ValueKey('task_${t.id}'),
-              padding: const EdgeInsets.only(bottom: 10),
-              child: AnimatedListItem(
-                child: TaskCard(
-                  task: t,
-                  subject: widget.subjectsById[t.subjectId],
-                ),
-              ),
-            )),
-      ],
-    );
-  }
-
-  Widget _completadasSection(
-      BuildContext context, List<TaskItem> completadas) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => setState(
-              () => _completadasExpandidas = !_completadasExpandidas),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              children: [
-                Icon(
-                  _completadasExpandidas
-                      ? Icons.expand_more
-                      : Icons.chevron_right,
-                  size: 22,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Completadas',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '(${completadas.length})',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (_completadasExpandidas)
-          ...completadas.map((t) => Padding(
-                key: ValueKey('done_${t.id}'),
-                padding: const EdgeInsets.only(bottom: 10),
-                child: AnimatedListItem(
-                  child: TaskCard(
-                    task: t,
-                    subject: widget.subjectsById[t.subjectId],
-                  ),
-                ),
-              )),
-      ],
+      ),
     );
   }
 }
 
-class TaskCard extends StatelessWidget {
-  final TaskItem task;
-  final Subject? subject;
-  const TaskCard({super.key, required this.task, required this.subject});
+class _VacioCategoria extends StatelessWidget {
+  final CategoriaTareas? categoria;
+  const _VacioCategoria({required this.categoria});
 
-  Future<void> _toggleCompletada(BuildContext context) async {
+  @override
+  Widget build(BuildContext context) {
+    final p = TaskLogPalette.of(context);
+    final texto = switch (categoria) {
+      CategoriaTareas.hoy => 'Nada para hoy.',
+      CategoriaTareas.atrasadas => 'No tienes tareas atrasadas.',
+      CategoriaTareas.proximas => 'No hay tareas próximas.',
+      CategoriaTareas.completadas => 'Aún no completas ninguna tarea.',
+      null => '¡Todo al día! No tienes tareas pendientes.',
+    };
+    return Center(
+      child: Text(texto, style: TextStyle(fontSize: 15, color: p.texto2)),
+    );
+  }
+}
+
+/// Fila de una tarea: círculo para completar, prioridad en «!», título y
+/// debajo la materia con la hora o «venció el …».
+///
+/// Se usa en Tareas, en el detalle de materia y en el calendario.
+class FilaTarea extends StatelessWidget {
+  final TaskItem tarea;
+  final Subject? materia;
+  final DateTime ahora;
+  final bool mostrarMateria;
+
+  const FilaTarea({
+    super.key,
+    required this.tarea,
+    required this.materia,
+    required this.ahora,
+    this.mostrarMateria = true,
+  });
+
+  Future<void> _toggle(BuildContext context) async {
     try {
       await FirestoreService.instance
-          .setTaskCompletada(task.id, !task.completada);
+          .setTaskCompletada(tarea.id, !tarea.completada);
     } catch (e) {
       if (context.mounted) showErrorSnackBar(context, e);
     }
@@ -238,109 +479,80 @@ class TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat('dd MMM', 'es');
-    final card = Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => DetalleTareaScreen(taskId: task.id),
-          ),
+    final p = TaskLogPalette.of(context);
+    final vencida = ClasificacionTareas.estaVencida(tarea, ahora);
+    final pendientes = tarea.recordatorios
+        .where((r) => r.resolverFecha(tarea.fechaLimite).isAfter(ahora))
+        .isNotEmpty;
+
+    final partes = <InlineSpan>[];
+    void agregar(String texto, {Color? color}) {
+      if (partes.isNotEmpty) partes.add(const TextSpan(text: ' · '));
+      partes.add(TextSpan(text: texto, style: TextStyle(color: color)));
+    }
+
+    if (mostrarMateria && materia != null) agregar(materia!.nombre);
+    if (tarea.completada) {
+      agregar(DateFormat('d MMM', 'es').format(tarea.fechaLimite));
+    } else if (vencida) {
+      agregar(
+        'venció el ${DateFormat('d MMM', 'es').format(tarea.fechaLimite)}',
+        color: AppColors.highPriority,
+      );
+    } else if (tieneHora(tarea.fechaLimite)) {
+      agregar(formatearHora(context, tarea.fechaLimite));
+    }
+    if (pendientes && !tarea.completada) {
+      partes.add(const TextSpan(text: '  '));
+      partes.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Icon(Icons.notifications_rounded, size: 13, color: p.texto2),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Checkbox circular para marcar completada
-              GestureDetector(
-                onTap: () => _toggleCompletada(context),
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 12, top: 2),
-                  child: Icon(
-                    task.completada
-                        ? Icons.check_circle
-                        : Icons.radio_button_unchecked,
-                    color: task.completada
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                    size: 26,
-                  ),
+      );
+    }
+
+    final signos = MarcaPrioridad.signos(tarea.importancia);
+    return FilaIOS(
+      leading: CirculoCompletar(
+        completada: tarea.completada,
+        onTap: () => _toggle(context),
+      ),
+      tituloWidget: Text.rich(
+        TextSpan(
+          children: [
+            if (signos.isNotEmpty && !tarea.completada)
+              TextSpan(
+                text: '$signos ',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.forImportancia(tarea.importancia),
                 ),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            task.titulo,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  decoration: task.completada
-                                      ? TextDecoration.lineThrough
-                                      : null,
-                                  color: task.completada
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant
-                                      : null,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(
-                          df.format(task.fechaLimite),
-                          style:
-                              Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                        ),
-                      ],
-                    ),
-                    if (task.descripcion.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        task.descripcion,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        PriorityBadge(importancia: task.importancia),
-                        if (subject != null)
-                          SubjectBadge(
-                            nombre: subject!.nombre,
-                            color: subject!.color,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            TextSpan(text: tarea.titulo),
+          ],
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 17,
+          color: tarea.completada ? p.texto2 : p.texto,
+          decoration: tarea.completada ? TextDecoration.lineThrough : null,
+        ),
+      ),
+      subtituloWidget: partes.isEmpty
+          ? null
+          : Text.rich(
+              TextSpan(children: partes),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: p.texto2),
+            ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DetalleTareaScreen(taskId: tarea.id),
         ),
       ),
     );
-    // Suaviza visualmente las completadas.
-    return Opacity(opacity: task.completada ? 0.6 : 1, child: card);
   }
 }

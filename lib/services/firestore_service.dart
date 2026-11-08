@@ -76,6 +76,23 @@ class FirestoreService {
     }
   }
 
+  /// Borra todos los documentos del usuario (se usa al eliminar la
+  /// cuenta). Va por lotes de 400 porque Firestore acepta máximo 500
+  /// operaciones por lote.
+  Future<void> borrarTodosLosDatos() async {
+    for (final nombre in const ['tasks', 'notes', 'gradeItems', 'subjects']) {
+      while (true) {
+        final snap = await _col(nombre).limit(400).get();
+        if (snap.docs.isEmpty) break;
+        final batch = _db.batch();
+        for (final d in snap.docs) {
+          batch.delete(d.reference);
+        }
+        await batch.commit();
+      }
+    }
+  }
+
   // ─────────────────────────── Subjects ───────────────────────────
 
   Stream<List<Subject>> watchSubjects() {
@@ -364,6 +381,13 @@ class FirestoreService {
   }
 
   // ─────────────────────────── Grade Items ────────────────────────
+
+  /// Todas las evaluaciones del usuario (para promedios generales).
+  Stream<List<GradeItem>> watchAllGradeItems() {
+    return _col('gradeItems').snapshots().map(
+          (snap) => snap.docs.map(GradeItem.fromDoc).toList(),
+        );
+  }
 
   Stream<List<GradeItem>> watchGradeItemsBySubject(String subjectId) {
     return _col('gradeItems')

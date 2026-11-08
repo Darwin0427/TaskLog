@@ -9,6 +9,7 @@ import 'firebase_options.dart';
 import 'screens/auth/auth_gate.dart';
 import 'screens/splash_screen.dart';
 import 'services/notification_service.dart';
+import 'services/preferencias_service.dart';
 import 'theme/app_theme.dart';
 import 'theme/theme_controller.dart';
 
@@ -17,6 +18,7 @@ Future<void> main() async {
   // El tema elegido se lee antes de pintar, para que el splash no
   // parpadee entre claro y oscuro. Es una lectura local y rápida.
   await ThemeController.instance.cargar();
+  await PreferenciasService.instance.cargar();
   // No esperamos a Firebase: la UI ya puede pintar el splash mientras
   // Firebase termina de inicializarse en background.
   runApp(const GestorTareasApp());
