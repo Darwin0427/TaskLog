@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/task_reminder.dart';
+import 'selectores_ios.dart';
 
 /// Widget para seleccionar y configurar los recordatorios de una tarea.
 ///
 /// Presenta 4 presets fijos como filas con checkbox (el día de, 1 día
 /// antes, 3 días antes, 1 semana antes). Cuando un preset está activo,
 /// muestra su hora (9:00 AM por defecto) y permite cambiarla con un
-/// `showTimePicker` en modo teclado (más cómodo que el reloj analógico).
+/// la rueda de hora de iOS (`elegirHora`).
 ///
 /// Adicionalmente, permite agregar recordatorios personalizados con
 /// cualquier número de días y cualquier hora vía un diálogo.
@@ -85,18 +86,10 @@ class RecordatoriosSelector extends StatelessWidget {
   }
 
   Future<void> _editHora(BuildContext context, TaskReminder r) async {
-    // `TimePickerEntryMode.input` abre el picker en modo teclado (dos
-    // campos numéricos). Forzamos formato 24h para evitar el problema
-    // AM/PM y permitir tipear "21:15" directamente.
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: r.hora, minute: r.minuto),
-      initialEntryMode: TimePickerEntryMode.input,
-      helpText: 'Hora del recordatorio (24 h)',
-      builder: (ctx, child) => MediaQuery(
-        data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
-      ),
+    final picked = await elegirHora(
+      context,
+      inicial: TimeOfDay(hour: r.hora, minute: r.minuto),
+      titulo: 'Hora del recordatorio',
     );
     if (picked != null) _updateHora(r, picked);
   }
@@ -338,16 +331,10 @@ Future<TaskReminder?> showAddReminderDialog(BuildContext context) {
               InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () async {
-                  final picked = await showTimePicker(
-                    context: ctx,
-                    initialTime: time,
-                    initialEntryMode: TimePickerEntryMode.input,
-                    helpText: 'Hora del recordatorio (24 h)',
-                    builder: (ctxBuilder, child) => MediaQuery(
-                      data: MediaQuery.of(ctxBuilder)
-                          .copyWith(alwaysUse24HourFormat: true),
-                      child: child!,
-                    ),
+                  final picked = await elegirHora(
+                    ctx,
+                    inicial: time,
+                    titulo: 'Hora del recordatorio',
                   );
                   if (picked != null) setState(() => time = picked);
                 },

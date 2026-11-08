@@ -7,6 +7,7 @@ import '../../services/firestore_service.dart';
 import '../../utils/error_messages.dart';
 import '../../widgets/grade_item_chips_selector.dart';
 import '../../widgets/importancia_selector.dart';
+import '../../widgets/selectores_ios.dart';
 import '../../widgets/subject_chips_selector.dart';
 import 'seleccionar_recordatorios_screen.dart';
 
@@ -114,12 +115,12 @@ class _CrearTareaScreenState extends State<CrearTareaScreen> {
 
   Future<void> _pickFecha() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _fechaLimite ?? now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 5),
-      locale: const Locale('es'),
+    final picked = await elegirFecha(
+      context,
+      inicial: _fechaLimite ?? now,
+      primera: DateTime(now.year - 1),
+      ultima: DateTime(now.year + 5, 12, 31),
+      titulo: 'Fecha límite',
     );
     if (picked != null) setState(() => _fechaLimite = picked);
   }

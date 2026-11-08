@@ -229,12 +229,20 @@ class _ReminderRow extends StatelessWidget {
     final theme = Theme.of(context);
     final fechaTexto =
         '${formatter.format(fechaAbsoluta)}, ${reminder.labelHora}';
-    return Padding(
+    // Un recordatorio cuya hora ya pasó no va a sonar: se muestra apagado.
+    final yaPaso = fechaAbsoluta.isBefore(DateTime.now());
+    return Opacity(
+      opacity: yaPaso ? 0.45 : 1,
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          Icon(Icons.notifications_active_outlined,
-              color: theme.colorScheme.primary, size: 20),
+          Icon(
+              yaPaso
+                  ? Icons.notifications_off_outlined
+                  : Icons.notifications_active_outlined,
+              color: theme.colorScheme.primary,
+              size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -248,7 +256,9 @@ class _ReminderRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  reminder.labelRelativo,
+                  yaPaso
+                      ? '${reminder.labelRelativo} · ya pasó'
+                      : reminder.labelRelativo,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -262,6 +272,7 @@ class _ReminderRow extends StatelessWidget {
             onPressed: onDelete,
           ),
         ],
+      ),
       ),
     );
   }

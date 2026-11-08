@@ -286,10 +286,14 @@ class _RecordatoriosCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final count = task.recordatorios.length;
+    // Solo cuentan los que todavía van a sonar.
+    final ahora = DateTime.now();
+    final count = task.recordatorios
+        .where((r) => r.resolverFecha(task.fechaLimite).isAfter(ahora))
+        .length;
     final subtitle = count == 0
-        ? 'Sin recordatorios programados'
-        : '$count ${count == 1 ? "programado" : "programados"}';
+        ? 'Sin recordatorios pendientes'
+        : '$count ${count == 1 ? "pendiente" : "pendientes"}';
 
     return Card(
       margin: EdgeInsets.zero,
