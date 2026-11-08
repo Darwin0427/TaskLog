@@ -17,6 +17,10 @@ on:
   push:
     branches: [ios]
 
+# Seguridad: el workflow solo puede leer el repo, nunca escribir en él.
+permissions:
+  contents: read
+
 # Si haces dos push seguidos, cancela la compilación vieja.
 concurrency:
   group: ios-${{ github.ref }}
